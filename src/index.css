@@ -1,0 +1,417 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Theme tokens ─────────────────────────────────────────────────── */
+
+:root, .light {
+  /* Mech Lab Cockpit — Light Mode (default) */
+  --c-bg: #F3F2EE;
+  --c-surface: #FFFFFF;
+  --c-surface-2: #F7F9FA;
+  --c-elevated: #EAE8E1;
+  --c-elevated-2: #D8D5CB;
+  --c-text: #191A19;
+  --c-text-muted: #666760;
+  --c-border: #D8D5CB;
+  --c-border-light: #B9B6AB;
+  --c-accent: #B39458;
+  --c-accent-light: #C7AA70;
+  --c-accent-dark: #806638;
+  --c-accent-2: #9B9C98;
+  --c-success: #806638;
+  --c-warning: #B39458;
+  --c-error: #806638;
+  --c-accent-text: #17232F;
+  --c-accent-2-text: #191A19;
+  --c-overlay: rgba(0, 0, 0, 0.3);
+  --c-notification-dot: #B39458;
+  --c-badge-bg: rgba(23, 107, 135, 0.08);
+  --c-badge-text: #806638;
+  --c-nav-active-bg: rgba(255, 104, 92, 0.08);
+  --c-nav-active-text: #806638;
+  --c-nav-active-border: rgba(255, 104, 92, 0.2);
+  --c-tab-active-bg: rgba(255, 104, 92, 0.08);
+  --c-tab-active-text: #806638;
+  --c-tab-active-border: rgba(255, 104, 92, 0.2);
+  --c-progress-fill: #B39458;
+  --c-progress-track: #E9EDF0;
+  --c-scrollbar: rgba(23, 35, 47, 0.12);
+  --c-scrollbar-hover: rgba(23, 35, 47, 0.2);
+  --c-selection: rgba(255, 104, 92, 0.2);
+  --c-decoration: rgba(155, 156, 152, 0.12);
+  --c-grid-line: rgba(155, 156, 152, 0.08);
+  --c-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
+}
+
+.dark {
+  /* Cyberpunk HUD — Dark Mode */
+  --c-bg: #101315;
+  --c-surface: #181D20;
+  --c-surface-2: #14181B;
+  --c-elevated: #20272B;
+  --c-elevated-2: #28323A;
+  --c-text: #F0F2EE;
+  --c-text-muted: #A1AAAE;
+  --c-border: #303A40;
+  --c-border-light: #3D484F;
+  --c-accent: #D0B477;
+  --c-accent-light: #E4C995;
+  --c-accent-dark: #A8874E;
+  --c-accent-2: #C4C5C1;
+  --c-success: #C4C5C1;
+  --c-warning: #D0B477;
+  --c-error: #C4C5C1;
+  --c-accent-text: #101315;
+  --c-accent-2-text: #F0F2EE;
+  --c-overlay: rgba(0, 0, 0, 0.6);
+  --c-notification-dot: #D0B477;
+  --c-badge-bg: rgba(208, 180, 119, 0.08);
+  --c-badge-text: #D0B477;
+  --c-nav-active-bg: rgba(208, 180, 119, 0.08);
+  --c-nav-active-text: #D0B477;
+  --c-nav-active-border: rgba(208, 180, 119, 0.2);
+  --c-tab-active-bg: rgba(208, 180, 119, 0.08);
+  --c-tab-active-text: #D0B477;
+  --c-tab-active-border: rgba(208, 180, 119, 0.2);
+  --c-progress-fill: #D0B477;
+  --c-progress-track: #20272B;
+  --c-scrollbar: rgba(255, 255, 255, 0.08);
+  --c-scrollbar-hover: rgba(255, 255, 255, 0.15);
+  --c-selection: rgba(208, 180, 119, 0.2);
+  --c-decoration: rgba(196, 197, 193, 0.08);
+  --c-grid-line: rgba(196, 197, 193, 0.06);
+  --c-shadow: none;
+  color-scheme: dark;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────── */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--c-bg);
+    color: var(--c-text);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  ::selection {
+    background-color: var(--c-selection);
+    color: var(--c-text);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ── Components ───────────────────────────────────────────────────── */
+
+@layer components {
+  .card {
+    @apply border rounded-md p-5 transition-all duration-200;
+    background-color: var(--c-surface);
+    border-color: var(--c-border);
+    box-shadow: var(--c-shadow);
+  }
+
+  .card-hover {
+    @apply hover:transition-all duration-200;
+  }
+  .card-hover:hover {
+    border-color: var(--c-border-light);
+    background-color: var(--c-surface-2);
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--c-accent);
+    color: var(--c-accent-text);
+  }
+  .btn-primary:hover {
+    background-color: var(--c-accent-light);
+  }
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  .btn-secondary {
+    @apply border transition-all duration-200;
+    background-color: var(--c-elevated);
+    color: var(--c-text);
+    border-color: var(--c-border);
+  }
+  .btn-secondary:hover {
+    background-color: var(--c-elevated-2);
+  }
+
+  .btn-ghost {
+    color: var(--c-text-muted);
+    transition: all 0.2s;
+  }
+  .btn-ghost:hover {
+    color: var(--c-text);
+    background-color: rgba(128, 128, 128, 0.08);
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  .tab-button {
+    @apply px-3.5 py-2 rounded-md text-sm font-medium transition-all duration-200 whitespace-nowrap;
+  }
+
+  .tab-active {
+    background-color: var(--c-tab-active-bg);
+    color: var(--c-tab-active-text);
+    border: 1px solid var(--c-tab-active-border);
+  }
+
+  .tab-inactive {
+    color: var(--c-text-muted);
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab-inactive:hover {
+    color: var(--c-text);
+    background-color: rgba(128, 128, 128, 0.06);
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 cursor-pointer;
+  }
+
+  .nav-item-active {
+    background-color: var(--c-nav-active-bg);
+    color: var(--c-nav-active-text);
+    border: 1px solid var(--c-nav-active-border);
+  }
+
+  .nav-item-inactive {
+    color: var(--c-text-muted);
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+  .nav-item-inactive:hover {
+    color: var(--c-text);
+    background-color: rgba(128, 128, 128, 0.06);
+  }
+
+  .stat-value {
+    @apply font-mono font-medium tracking-tight;
+    color: var(--c-text);
+  }
+
+  .section-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.15em];
+    color: var(--c-text-muted);
+  }
+
+  .divider {
+    border-color: var(--c-border);
+  }
+
+  .demo-label {
+    @apply flex items-center gap-2 mb-4 text-xs rounded px-3 py-2 border;
+    color: var(--c-text-muted);
+    background-color: var(--c-surface-2);
+    border-color: var(--c-border);
+  }
+}
+
+/* ── Utilities ────────────────────────────────────────────────────── */
+
+@layer utilities {
+  /* Legacy page utilities are kept as theme-aware aliases during the visual migration. */
+  .text-white { color: var(--c-text) !important; }
+  .text-gray-300, .text-gray-400, .text-gray-500, .text-gray-600 { color: var(--c-text-muted) !important; }
+  .bg-ink-800, .bg-ink-700 { background-color: var(--c-surface-2) !important; }
+  .border-white\/5, .border-white\/10 { border-color: var(--c-border) !important; }
+  .bg-white\/5 { background-color: color-mix(in srgb, var(--c-text) 5%, transparent) !important; }
+  .bg-white\/10 { background-color: color-mix(in srgb, var(--c-text) 10%, transparent) !important; }
+  .bg-accent-600\/10, .bg-accent-600\/15, .bg-accent-600\/20, .bg-accent-500\/5 { background-color: color-mix(in srgb, var(--c-accent) 12%, transparent) !important; }
+  .bg-ocean-500\/15, .bg-ocean-600\/15 { background-color: color-mix(in srgb, var(--c-accent-2) 12%, transparent) !important; }
+  .bg-success-500\/15 { background-color: color-mix(in srgb, var(--c-success) 12%, transparent) !important; }
+  .bg-warning-500\/15 { background-color: color-mix(in srgb, var(--c-warning) 12%, transparent) !important; }
+  .bg-error-500\/15 { background-color: color-mix(in srgb, var(--c-error) 12%, transparent) !important; }
+  .border-accent-500\/20 { border-color: color-mix(in srgb, var(--c-accent) 20%, transparent) !important; }
+  .border-accent-500 { border-color: var(--c-accent) !important; }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-scrollbar) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--c-scrollbar);
+    border-radius: 2px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: var(--c-scrollbar-hover);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Coral CTA shimmer (light mode only) */
+  .shimmer-btn {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 60%;
+    background: linear-gradient(
+      100deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.3) 50%,
+      transparent 70%
+    );
+    transform: translateX(-150%);
+    pointer-events: none;
+    animation: shimmer 4s ease-in-out infinite;
+  }
+  .shimmer-btn:hover::after {
+    animation: none;
+    opacity: 0;
+  }
+
+  /* Circuit-edge sweep for active panels (dark mode only) */
+  .circuit-panel {
+    position: relative;
+    overflow: hidden;
+  }
+  .circuit-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--c-accent),
+      transparent
+    );
+    transform: translateX(-100%);
+    animation: circuitSweep 5s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 1;
+  }
+}
+
+/* ── Theme-specific decorative layers ──────────────────────────────── */
+
+/* Light mode: scanning beam */
+.light .scan-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 120px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(155, 156, 152, 0.05),
+    rgba(179, 148, 88, 0.06),
+    rgba(155, 156, 152, 0.05),
+    transparent
+  );
+  pointer-events: none;
+  z-index: 0;
+  animation: scanBeam 10s linear infinite;
+}
+
+/* Light mode: pulsing vector grid */
+.light .grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--c-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+/* Dark mode: pulsing vector grid */
+.dark .grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--c-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+  animation: gridPulse 6s ease-in-out infinite;
+}
+
+/* Dark mode: particle canvas */
+.dark-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Hide decorative elements in wrong mode */
+.light .grid-overlay { display: block; }
+.dark .grid-overlay { display: block; }
+.light .scan-beam { display: block; }
+.dark .scan-beam { display: none; }
+.dark .dark-particles { display: block; }
+.light .dark-particles { display: none; }
+
+/* ── Reduced motion ────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .scan-beam,
+  .grid-overlay,
+  .dark-particles,
+  .shimmer-btn::after,
+  .circuit-panel::before {
+    display: none !important;
+  }
+}

@@ -1,0 +1,278 @@
+import type {
+  Student,
+  Game,
+  Quest,
+  LeaderboardEntry,
+  Activity,
+  Badge,
+  ContinueLearningItem,
+  Notification,
+} from '@/types';
+
+// ─── Demo student (the logged-in user) ───────────────────────────
+export const demoStudent: Student = {
+  id: 'stu-001',
+  displayName: 'Aria Chen',
+  studentId: 'MSOT-2026-0417',
+  email: 'aria.chen@msot.edu',
+  avatarInitials: 'AC',
+  avatarColor: 'from-[var(--c-accent)] to-[var(--c-accent-2)]',
+  level: 14,
+  totalXP: 8470,
+  currentLevelXP: 470,
+  nextLevelXP: 800,
+  streak: 12,
+  completedQuests: 87,
+  courseBranch: 'Computer Science — Data Systems',
+  year: 'Year 2',
+  batch: 'Batch 2026 — Section B',
+  campus: 'North Campus',
+  joinedDate: 'August 2025',
+};
+
+// ─── Games library ────────────────────────────────────────────────
+export const demoGames: Game[] = [
+  {
+    id: 'game-001',
+    title: 'DSA Dash',
+    category: 'Data Structures',
+    difficulty: 'Intermediate',
+    description:
+      'Race against the clock to solve array, linked-list, and tree puzzles. Build speed and accuracy on core DSA patterns.',
+    icon: 'Zap',
+    color: 'from-[var(--c-accent)]/15 to-[var(--c-accent-2)]/5',
+    plays: 1240,
+    rating: 4.7,
+  },
+  {
+    id: 'game-002',
+    title: 'Code Quest',
+    category: 'Algorithms',
+    difficulty: 'Advanced',
+    description:
+      'Embark on an epic journey through sorting, searching, and dynamic programming challenges across five kingdoms.',
+    icon: 'Swords',
+    color: 'from-[var(--c-accent-2)]/15 to-[var(--c-accent)]/5',
+    plays: 980,
+    rating: 4.8,
+  },
+  {
+    id: 'game-003',
+    title: 'Logic Lab',
+    category: 'Reasoning',
+    difficulty: 'Beginner',
+    description:
+      'Train your deductive reasoning with bite-sized logic puzzles, truth tables, and Boolean brain-teasers.',
+    icon: 'FlaskConical',
+    color: 'from-[var(--c-success)]/15 to-[var(--c-accent-2)]/5',
+    plays: 1560,
+    rating: 4.5,
+  },
+  {
+    id: 'game-004',
+    title: 'Recursion Realm',
+    category: 'Algorithms',
+    difficulty: 'Advanced',
+    description:
+      'Master recursive thinking through tower puzzles, tree traversals, and memoization challenges in a mystical world.',
+    icon: 'Repeat',
+    color: 'from-[var(--c-warning)]/15 to-[var(--c-accent)]/5',
+    plays: 720,
+    rating: 4.6,
+  },
+  {
+    id: 'game-005',
+    title: 'Graph Gladiator',
+    category: 'Graph Theory',
+    difficulty: 'Expert',
+    description:
+      'Battle through BFS, DFS, shortest-path, and MST problems. Only the sharpest minds survive the arena.',
+    icon: 'Network',
+    color: 'from-[var(--c-error)]/15 to-[var(--c-accent)]/5',
+    plays: 540,
+    rating: 4.9,
+  },
+  {
+    id: 'game-006',
+    title: 'Bit Battles',
+    category: 'Bit Manipulation',
+    difficulty: 'Intermediate',
+    description:
+      'Sharpen your low-level intuition with bitwise operations, masks, and shift-based mini-games.',
+    icon: 'Binary',
+    color: 'from-[var(--c-accent-2)]/15 to-[var(--c-accent)]/5',
+    plays: 890,
+    rating: 4.4,
+  },
+];
+
+// ─── Quests ───────────────────────────────────────────────────────
+export const demoQuests: Quest[] = [
+  {
+    id: 'quest-001',
+    title: 'Daily Quiz: Complexity Analysis',
+    description: 'Answer 5 questions on time and space complexity.',
+    frequency: 'daily',
+    status: 'in-progress',
+    xpReward: 120,
+    progress: 3,
+    total: 5,
+    category: 'Algorithms',
+    dueLabel: 'Today, 11:59 PM',
+  },
+  {
+    id: 'quest-002',
+    title: 'Recursion Challenge',
+    description: 'Solve 3 recursion problems in the Recursion Realm game.',
+    frequency: 'daily',
+    status: 'in-progress',
+    xpReward: 200,
+    progress: 1,
+    total: 3,
+    category: 'Algorithms',
+    dueLabel: 'Today, 11:59 PM',
+  },
+  {
+    id: 'quest-003',
+    title: 'Daily Streak Check-in',
+    description: 'Log in and complete at least one activity to maintain your streak.',
+    frequency: 'daily',
+    status: 'completed',
+    xpReward: 50,
+    progress: 1,
+    total: 1,
+    category: 'General',
+    dueLabel: 'Completed',
+  },
+  {
+    id: 'quest-004',
+    title: 'Weekly: Master Linked Lists',
+    description: 'Complete all 8 linked-list modules in DSA Dash.',
+    frequency: 'weekly',
+    status: 'in-progress',
+    xpReward: 500,
+    progress: 5,
+    total: 8,
+    category: 'Data Structures',
+    dueLabel: '4 days left',
+  },
+  {
+    id: 'quest-005',
+    title: 'Weekly: Graph Theory Sprint',
+    description: 'Finish 10 graph problems across any game mode.',
+    frequency: 'weekly',
+    status: 'available',
+    xpReward: 600,
+    progress: 0,
+    total: 10,
+    category: 'Graph Theory',
+    dueLabel: '4 days left',
+  },
+  {
+    id: 'quest-006',
+    title: 'Weekly: Perfect Score Challenge',
+    description: 'Score 100% on any 3 quizzes this week.',
+    frequency: 'weekly',
+    status: 'locked',
+    xpReward: 400,
+    progress: 0,
+    total: 3,
+    category: 'General',
+    dueLabel: 'Unlocks at Level 15',
+  },
+];
+
+// ─── Leaderboard ──────────────────────────────────────────────────
+export const demoLeaderboard: LeaderboardEntry[] = [
+  { id: 'lb-001', rank: 1, displayName: 'Kai Patel', level: 19, totalXP: 12450, avatarInitials: 'KP', avatarColor: 'from-[var(--c-warning)] to-[var(--c-error)]', batch: 'Batch 2026 — Section A', campus: 'North Campus' },
+  { id: 'lb-002', rank: 2, displayName: 'Sofia Rivera', level: 18, totalXP: 11820, avatarInitials: 'SR', avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-accent)]', batch: 'Batch 2026 — Section A', campus: 'South Campus' },
+  { id: 'lb-003', rank: 3, displayName: 'Devon Kim', level: 17, totalXP: 10940, avatarInitials: 'DK', avatarColor: 'from-[var(--c-success)] to-[var(--c-accent-2)]', batch: 'Batch 2026 — Section B', campus: 'North Campus' },
+  { id: 'lb-004', rank: 4, displayName: 'Aria Chen', level: 14, totalXP: 8470, avatarInitials: 'AC', avatarColor: 'from-[var(--c-accent)] to-[var(--c-accent-2)]', batch: 'Batch 2026 — Section B', campus: 'North Campus', isCurrentUser: true },
+  { id: 'lb-005', rank: 5, displayName: 'Maya Okafor', level: 16, totalXP: 9210, avatarInitials: 'MO', avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-success)]', batch: 'Batch 2026 — Section C', campus: 'South Campus' },
+  { id: 'lb-006', rank: 6, displayName: 'Liam Foster', level: 15, totalXP: 8800, avatarInitials: 'LF', avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-accent)]', batch: 'Batch 2026 — Section B', campus: 'East Campus' },
+  { id: 'lb-007', rank: 7, displayName: 'Zara Hussain', level: 15, totalXP: 8650, avatarInitials: 'ZH', avatarColor: 'from-[var(--c-warning)] to-[var(--c-accent)]', batch: 'Batch 2026 — Section A', campus: 'East Campus' },
+  { id: 'lb-008', rank: 8, displayName: 'Noah Williams', level: 14, totalXP: 8300, avatarInitials: 'NW', avatarColor: 'from-[var(--c-error)] to-[var(--c-warning)]', batch: 'Batch 2026 — Section C', campus: 'North Campus' },
+  { id: 'lb-009', rank: 9, displayName: 'Iris Tanaka', level: 13, totalXP: 7900, avatarInitials: 'IT', avatarColor: 'from-[var(--c-success)] to-[var(--c-warning)]', batch: 'Batch 2026 — Section B', campus: 'South Campus' },
+  { id: 'lb-010', rank: 10, displayName: 'Eli Brooks', level: 13, totalXP: 7750, avatarInitials: 'EB', avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-accent)]', batch: 'Batch 2026 — Section C', campus: 'East Campus' },
+];
+
+// ─── Activity feed ────────────────────────────────────────────────
+export const demoActivities: Activity[] = [
+  { id: 'act-001', date: '2026-10-13', type: 'quiz', title: 'Daily Quiz: Complexity Analysis', detail: 'Completed 3 of 5 questions', xpEarned: 80 },
+  { id: 'act-002', date: '2026-10-13', type: 'game', title: 'DSA Dash', detail: 'Solved 4 array puzzles', xpEarned: 120 },
+  { id: 'act-003', date: '2026-10-13', type: 'quest', title: 'Recursion Challenge', detail: 'Solved 1 of 3 recursion problems', xpEarned: 60 },
+  { id: 'act-004', date: '2026-10-12', type: 'game', title: 'Logic Lab', detail: 'Completed Boolean brain-teaser set', xpEarned: 90 },
+  { id: 'act-005', date: '2026-10-12', type: 'achievement', title: 'Badge Earned: Quick Thinker', detail: 'Solved 10 problems under 2 minutes each', xpEarned: 150 },
+  { id: 'act-006', date: '2026-10-12', type: 'quest', title: 'Daily Streak Check-in', detail: 'Maintained 11-day streak', xpEarned: 50 },
+  { id: 'act-007', date: '2026-10-11', type: 'game', title: 'Code Quest', detail: 'Cleared the Sorting Kingdom', xpEarned: 200 },
+  { id: 'act-008', date: '2026-10-11', type: 'level-up', title: 'Reached Level 14', detail: 'Unlocked new weekly quests', xpEarned: 0 },
+  { id: 'act-009', date: '2026-10-10', type: 'quiz', title: 'Daily Quiz: Big-O Notation', detail: 'Scored 4 of 5', xpEarned: 100 },
+  { id: 'act-010', date: '2026-10-10', type: 'game', title: 'Bit Battles', detail: 'Completed bitwise shift challenge', xpEarned: 70 },
+  { id: 'act-011', date: '2026-10-09', type: 'challenge', title: 'Daily Challenge: Reverse a Linked List', detail: 'Solved in 3 minutes 12 seconds', xpEarned: 130 },
+  { id: 'act-012', date: '2026-10-09', type: 'game', title: 'Recursion Realm', detail: 'Completed tower puzzle', xpEarned: 110 },
+];
+
+// ─── Badges ───────────────────────────────────────────────────────
+export const demoBadges: Badge[] = [
+  { id: 'badge-001', name: 'First Steps', description: 'Complete your first quest', icon: 'Footprints', earned: true, dateEarned: '2025-08-15', rarity: 'common' },
+  { id: 'badge-002', name: 'Quick Thinker', description: 'Solve 10 problems under 2 minutes', icon: 'Zap', earned: true, dateEarned: '2026-10-12', rarity: 'rare' },
+  { id: 'badge-003', name: 'Streak Master', description: 'Maintain a 10-day streak', icon: 'Flame', earned: true, dateEarned: '2026-10-08', rarity: 'rare' },
+  { id: 'badge-004', name: 'Quiz Champion', description: 'Score 100% on 5 quizzes', icon: 'Trophy', earned: true, dateEarned: '2026-09-30', rarity: 'epic' },
+  { id: 'badge-005', name: 'Recursion Wizard', description: 'Complete all Recursion Realm levels', icon: 'Sparkles', earned: false, rarity: 'epic' },
+  { id: 'badge-006', name: 'Graph Legend', description: 'Finish Graph Gladiator on Expert', icon: 'Crown', earned: false, rarity: 'legendary' },
+  { id: 'badge-007', name: 'Night Owl', description: 'Complete a quest after midnight', icon: 'Moon', earned: false, rarity: 'common' },
+  { id: 'badge-008', name: 'Perfectionist', description: 'Score 100% on 20 quizzes', icon: 'Star', earned: false, rarity: 'legendary' },
+];
+
+// ─── Continue learning ────────────────────────────────────────────
+export const demoContinueLearning: ContinueLearningItem[] = [
+  { id: 'cl-001', title: 'Linked Lists Mastery', category: 'DSA Dash', progress: 62, icon: 'Link', color: 'from-[var(--c-accent)]/15 to-[var(--c-accent-2)]/5' },
+  { id: 'cl-002', title: 'Sorting Kingdom', category: 'Code Quest', progress: 40, icon: 'Swords', color: 'from-[var(--c-accent-2)]/15 to-[var(--c-accent)]/5' },
+  { id: 'cl-003', title: 'Boolean Brain-Teasers', category: 'Logic Lab', progress: 85, icon: 'FlaskConical', color: 'from-[var(--c-success)]/15 to-[var(--c-accent-2)]/5' },
+];
+
+// ─── Notifications ────────────────────────────────────────────────
+export const demoNotifications: Notification[] = [
+  { id: 'n-001', title: 'New daily quiz available', detail: 'Complexity Analysis — 120 XP', time: '2h ago', read: false },
+  { id: 'n-002', title: 'Streak milestone!', detail: 'You reached a 12-day streak', time: '5h ago', read: false },
+  { id: 'n-003', title: 'Badge earned: Quick Thinker', detail: 'Solve 10 problems under 2 minutes', time: '1d ago', read: true },
+  { id: 'n-004', title: 'Weekly quest expiring', detail: 'Master Linked Lists — 4 days left', time: '1d ago', read: true },
+];
+
+// ─── Weekly progress (Mon–Sun XP earned) ──────────────────────────
+export const weeklyProgress = [
+  { day: 'Mon', xp: 340 },
+  { day: 'Tue', xp: 520 },
+  { day: 'Wed', xp: 280 },
+  { day: 'Thu', xp: 610 },
+  { day: 'Fri', xp: 450 },
+  { day: 'Sat', xp: 380 },
+  { day: 'Sun', xp: 470 },
+];
+
+// ─── Faculty stats ────────────────────────────────────────────────
+export const facultyStats = {
+  totalStudents: 248,
+  activeToday: 187,
+  quizParticipation: 75.3,
+  inactiveStudents: 23,
+  totalXPAwarded: 1842000,
+  avgStudentLevel: 11.4,
+  weeklyEngagement: [
+    { day: 'Mon', value: 165 },
+    { day: 'Tue', value: 192 },
+    { day: 'Wed', value: 148 },
+    { day: 'Thu', value: 201 },
+    { day: 'Fri', value: 178 },
+    { day: 'Sat', value: 134 },
+    { day: 'Sun', value: 187 },
+  ],
+};
+
+// ─── Faculty leaderboard preview (top 5 for faculty dashboard) ────
+export const facultyInactiveStudents = [
+  { id: 'fs-001', name: 'Tom Reed', studentId: 'MSOT-2026-0089', lastActive: '6 days ago', level: 8 },
+  { id: 'fs-002', name: 'Nina Cole', studentId: 'MSOT-2026-0102', lastActive: '5 days ago', level: 6 },
+  { id: 'fs-003', name: 'Ray Diaz', studentId: 'MSOT-2026-0115', lastActive: '4 days ago', level: 10 },
+  { id: 'fs-004', name: 'Emma Vu', studentId: 'MSOT-2026-0128', lastActive: '3 days ago', level: 7 },
+];
