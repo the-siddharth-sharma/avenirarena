@@ -4,6 +4,7 @@ import { StudentAvatar } from './StudentAvatar';
 import { XPProgressBar } from './XPProgressBar';
 import { Logo } from './Logo';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+import { useAuth } from '@/context/AuthContext';
 
 interface SidebarProps {
   currentPath: string;
@@ -14,6 +15,7 @@ interface SidebarProps {
 
 export function Sidebar({ currentPath, onNavigate, isOpen, onClose }: SidebarProps) {
   const { selectedStudent } = useStudentProfiles();
+  const { currentUser, openAuthModal } = useAuth();
 
   const handleNav = (path: string) => {
     onNavigate(path);
@@ -75,26 +77,47 @@ export function Sidebar({ currentPath, onNavigate, isOpen, onClose }: SidebarPro
           </div>
         </nav>
 
-        {/* Student card */}
+        {/* Student / Authenticated User card */}
         <div className="px-3 pb-4">
           <div className="bg-graphite border border-line rounded-md p-3">
             <div className="flex items-center gap-3 mb-2.5">
               <StudentAvatar
-                initials={selectedStudent.avatarInitials}
+                initials={
+                  currentUser?.displayName
+                    ? currentUser.displayName
+                        .split(' ')
+                        .map((p) => p[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase()
+                    : selectedStudent.avatarInitials
+                }
+                photoURL={currentUser?.photoURL}
                 color={selectedStudent.avatarColor}
                 size="sm"
               />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-ivory truncate">{selectedStudent.displayName}</p>
-                <p className="text-xs text-muted">Level {selectedStudent.level}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ivory truncate">
+                  {currentUser ? currentUser.displayName : selectedStudent.displayName}
+                </p>
+                <p className="text-xs text-muted truncate">
+                  {currentUser ? currentUser.email : `Level ${selectedStudent.level}`}
+                </p>
               </div>
             </div>
-            <XPProgressBar
-              current={selectedStudent.currentLevelXP}
-              max={selectedStudent.nextLevelXP}
-              showLabels={false}
-              height="sm"
-            />
+            {currentUser ? (
+              <div className="pt-2 border-t border-line flex items-center justify-between text-[11px] font-mono text-gold-400">
+                <span>Google Verified</span>
+                <span>Active</span>
+              </div>
+            ) : (
+              <button
+                onClick={openAuthModal}
+                className="w-full text-center text-[11px] font-mono py-1 rounded bg-elevated hover:bg-elevated-light text-gold-400 transition-colors"
+              >
+                Sign in with Google
+              </button>
+            )}
           </div>
         </div>
       </aside>

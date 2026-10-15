@@ -69,17 +69,24 @@ export interface Quest {
   dueLabel: string;
 }
 
+export type LeagueTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+
 export interface LeaderboardEntry {
   id: string;
   rank: number;
   displayName: string;
   level: number;
   totalXP: number;
+  weeklyXP?: number;
+  rankChange?: number; // e.g. +2, -1, 0
+  previousRank?: number;
   avatarInitials: string;
   avatarColor: string;
   batch: string;
   campus: string;
+  leagueTier?: LeagueTier;
   isCurrentUser?: boolean;
+  isDemo?: boolean;
 }
 
 export interface Activity {

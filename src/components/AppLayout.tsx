@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { MobileHeader } from './MobileHeader';
 import { BackgroundEffects } from './BackgroundEffects';
+import { GlobalCursor } from './GlobalCursor';
 
 interface AppLayoutProps {
   currentPath: string;
@@ -15,6 +16,7 @@ export function AppLayout({ currentPath, onNavigate, children }: AppLayoutProps)
 
   return (
     <div className="min-h-screen bg-obsidian flex">
+      <GlobalCursor />
       <Sidebar
         currentPath={currentPath}
         onNavigate={onNavigate}

@@ -16,6 +16,8 @@ import { dailyQuizId } from '@/data/quizData';
 import { learningGames } from '@/data/gameData';
 import { badgeDefinitions, getPeriodKey, getWeekKey, questDefinitions } from '@/data/progressData';
 import { calculateDailyQuizScore, getAcademicDate } from '@/engine/xpRules';
+import { traceEngine } from '@/engine/infiniteTrace';
+import { useAuth } from '@/context/AuthContext';
 
 const SELECTED_STUDENT_KEY = 'avenir-selected-student';
 const STUDENT_PROFILES_KEY = 'avenir-student-profiles';
@@ -183,17 +185,80 @@ function applyDerivedRewards(studentId: string, state: StudentProgress, now: Dat
 }
 
 export function StudentProfileProvider({ children }: { children: ReactNode }) {
+  const { currentUser } = useAuth();
   const [students, setStudents] = useState<StudentProfile[]>(getInitialStudents);
   const [selectedStudentId, setSelectedStudentId] = useState(getInitialStudentId);
   const [progress, setProgress] = useState<PersistedProgressState>(getInitialProgress);
+
+  // Synchronize authenticated Google user with student profiles and Infinite Trace
+  useEffect(() => {
+    if (currentUser) {
+      setStudents((prev) => {
+        const existing = prev.find((s) => s.id === currentUser.uid);
+        if (existing) {
+          return prev.map((s) =>
+            s.id === currentUser.uid
+              ? {
+                  ...s,
+                  displayName: currentUser.displayName,
+                  email: currentUser.email,
+                  avatarInitials: getInitials(currentUser.displayName),
+                }
+              : s
+          );
+        }
+        const googleProfile: StudentProfile = {
+          id: currentUser.uid,
+          studentId: currentUser.uid.replace('google-', 'G-').slice(0, 10).toUpperCase(),
+          displayName: currentUser.displayName,
+          email: currentUser.email,
+          avatarInitials: getInitials(currentUser.displayName),
+          avatarColor: 'from-gold-500 to-gold-700',
+          level: 1,
+          totalXP: 0,
+          currentLevelXP: 0,
+          nextLevelXP: 100,
+          streak: 1,
+          completedQuests: 0,
+          courseBranch: 'Computer Science & Engineering',
+          year: 'Year 1',
+          batch: '2026',
+          campus: 'Main Tech Campus',
+          joinedDate: new Date().toISOString(),
+          profileCompletion: 85,
+        };
+        return [googleProfile, ...prev];
+      });
+      setSelectedStudentId(currentUser.uid);
+      traceEngine.setActiveStudent(currentUser.uid);
+    } else {
+      // Revert to default student on logout
+      const defaultId = getInitialStudentId();
+      setSelectedStudentId(defaultId);
+      traceEngine.setActiveStudent(defaultId);
+    }
+  }, [currentUser]);
+
   const selectedStudent = useMemo(() => students.find((student) => student.id === selectedStudentId) || students[0], [selectedStudentId, students]);
   const selectedProgress = progress.students[selectedStudent.id] || emptyProgress();
 
   useEffect(() => { try { localStorage.setItem(STUDENT_PROFILES_KEY, JSON.stringify(students)); } catch { /* Optional local persistence. */ } }, [students]);
-  useEffect(() => { try { localStorage.setItem(SELECTED_STUDENT_KEY, selectedStudentId); } catch { /* Optional local persistence. */ } }, [selectedStudentId]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SELECTED_STUDENT_KEY, selectedStudentId);
+    } catch {
+      /* Optional local persistence. */
+    }
+    traceEngine.setActiveStudent(selectedStudentId);
+  }, [selectedStudentId]);
   useEffect(() => { try { localStorage.setItem(PROGRESS_STATE_KEY, JSON.stringify(progress)); } catch { /* Optional local persistence. */ } }, [progress]);
 
-  const selectStudent = (studentId: string) => { if (students.some((student) => student.id === studentId)) setSelectedStudentId(studentId); };
+  const selectStudent = (studentId: string) => {
+    if (students.some((student) => student.id === studentId)) {
+      traceEngine.setActiveStudent(studentId);
+      setSelectedStudentId(studentId);
+    }
+  };
   const updateSelectedStudent = (changes: EditableStudentProfile) => setStudents((current) => current.map((student) => student.id !== selectedStudent.id ? student : { ...student, ...changes, avatarInitials: getInitials(changes.displayName), profileCompletion: calculateCompletion(changes) }));
 
   const submitDailyQuiz = (quizId: string, questions: QuizQuestion[], answers: number[]): QuizSubmissionResult => {

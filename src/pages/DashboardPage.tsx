@@ -22,15 +22,30 @@ import {
   demoLeaderboard,
   weeklyProgress,
 } from '@/data/demoData';
+import { useMemo } from 'react';
 import type { NavigateProps } from '@/pages/types';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+import { HeroCursorTrace } from '@/components/HeroCursorTrace';
+import { InfiniteTraceWidget } from '@/components/InfiniteTraceWidget';
+import { buildCompetitiveStandings } from '@/engine/competitiveArena';
 
 export function DashboardPage({ navigate }: NavigateProps) {
-  const { selectedStudent } = useStudentProfiles();
+  const { selectedStudent, students, xpTransactions } = useStudentProfiles();
   const dailyQuest = demoQuests.find((q) => q.frequency === 'daily' && q.status !== 'completed');
   const todayChallenge = dailyQuest || demoQuests[0];
   const recentActivities = demoActivities.slice(0, 5);
-  const topPlayers = demoLeaderboard.slice(0, 5);
+
+  const { entries: arenaStandings } = useMemo(
+    () =>
+      buildCompetitiveStandings(students, selectedStudent, xpTransactions, {
+        scope: 'all-time',
+        batchFilter: 'all',
+        campusFilter: 'all',
+        leagueFilter: 'all',
+      }),
+    [students, selectedStudent, xpTransactions]
+  );
+  const topPlayers = arenaStandings.slice(0, 5);
   const maxWeekly = Math.max(...weeklyProgress.map((d) => d.xp));
 
   return (
@@ -42,8 +57,9 @@ export function DashboardPage({ navigate }: NavigateProps) {
 
       {/* Welcome banner */}
       <Card className="mb-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-accent-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
-        <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <HeroCursorTrace />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-accent-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <StudentAvatar
               initials={selectedStudent.avatarInitials}
@@ -78,6 +94,11 @@ export function DashboardPage({ navigate }: NavigateProps) {
           </div>
         </div>
       </Card>
+
+      {/* Infinite Trace session telemetry widget */}
+      <div className="mb-6">
+        <InfiniteTraceWidget />
+      </div>
 
       {/* Summary stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
