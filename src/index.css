@@ -120,7 +120,7 @@
 
 @layer components {
   .card {
-    @apply border rounded-md p-5 transition-all duration-200;
+    @apply border rounded-md p-5 transition-all duration-200 relative;
     background-color: var(--c-surface);
     border-color: var(--c-border);
     box-shadow: var(--c-shadow);
@@ -132,10 +132,41 @@
   .card-hover:hover {
     border-color: var(--c-border-light);
     background-color: var(--c-surface-2);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.08), 0 0 1px 1px color-mix(in srgb, var(--c-accent) 14%, transparent);
+  }
+
+  /* Refined pointer spotlight */
+  .card-spotlight {
+    position: relative;
+    overflow: hidden;
+  }
+  .card-spotlight::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      380px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
+      color-mix(in srgb, var(--c-accent) 8%, transparent),
+      transparent 65%
+    );
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .card-spotlight:hover::before {
+    opacity: 1;
+  }
+  .card-spotlight > * {
+    position: relative;
+    z-index: 1;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed select-none;
+    will-change: transform, box-shadow;
   }
 
   .btn-primary {
@@ -144,9 +175,12 @@
   }
   .btn-primary:hover {
     background-color: var(--c-accent-light);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--c-accent) 26%, transparent);
   }
   .btn-primary:active {
-    transform: scale(0.98);
+    transform: translateY(0.5px) scale(0.98);
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--c-accent) 15%, transparent);
   }
 
   .btn-secondary {
@@ -157,6 +191,12 @@
   }
   .btn-secondary:hover {
     background-color: var(--c-elevated-2);
+    border-color: var(--c-border-light);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+  }
+  .btn-secondary:active {
+    transform: translateY(0.5px) scale(0.98);
   }
 
   .btn-ghost {
@@ -166,6 +206,10 @@
   .btn-ghost:hover {
     color: var(--c-text);
     background-color: rgba(128, 128, 128, 0.08);
+    transform: translateY(-0.5px);
+  }
+  .btn-ghost:active {
+    transform: scale(0.98);
   }
 
   .badge {
@@ -180,6 +224,7 @@
     background-color: var(--c-tab-active-bg);
     color: var(--c-tab-active-text);
     border: 1px solid var(--c-tab-active-border);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 
   .tab-inactive {
@@ -190,16 +235,18 @@
   .tab-inactive:hover {
     color: var(--c-text);
     background-color: rgba(128, 128, 128, 0.06);
+    transform: translateY(-0.5px);
   }
 
   .nav-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 cursor-pointer relative;
   }
 
   .nav-item-active {
     background-color: var(--c-nav-active-bg);
     color: var(--c-nav-active-text);
     border: 1px solid var(--c-nav-active-border);
+    box-shadow: inset 2px 0 0 var(--c-accent);
   }
 
   .nav-item-inactive {
@@ -210,6 +257,7 @@
   .nav-item-inactive:hover {
     color: var(--c-text);
     background-color: rgba(128, 128, 128, 0.06);
+    transform: translateX(3px);
   }
 
   .stat-value {
@@ -396,7 +444,38 @@
 .light .scan-beam { display: block; }
 .dark .scan-beam { display: none; }
 .dark .dark-particles { display: block; }
-.light .dark-particles { display: none; }
+/* ── Syntax Mansion Animations ─────────────────────────────────────── */
+
+@keyframes glitchShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px) rotate(-1deg); }
+  40% { transform: translateX(8px) rotate(1deg); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
+.animate-glitch-shake {
+  animation: glitchShake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes cluePulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 4px rgba(6, 182, 212, 0.4)); }
+  50% { transform: scale(1.12); filter: drop-shadow(0 0 12px rgba(6, 182, 212, 0.9)); }
+}
+
+.animate-clue-pulse {
+  animation: cluePulse 2.2s ease-in-out infinite;
+}
+
+@keyframes matrixRain {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 0.8; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+.animate-matrix-rain {
+  animation: matrixRain 1.5s linear infinite;
+}
 
 /* ── Reduced motion ────────────────────────────────────────────────── */
 
@@ -411,7 +490,18 @@
   .grid-overlay,
   .dark-particles,
   .shimmer-btn::after,
-  .circuit-panel::before {
+  .circuit-panel::before,
+  .card-spotlight::before {
     display: none !important;
+  }
+
+  .card-hover:hover,
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .btn-ghost:hover,
+  .nav-item-inactive:hover,
+  .tab-inactive:hover {
+    transform: none !important;
+    box-shadow: none !important;
   }
 }

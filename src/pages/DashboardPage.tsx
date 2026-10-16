@@ -17,20 +17,33 @@ import { XPProgressBar } from '@/components/XPProgressBar';
 import { ProgressBar } from '@/components/ProgressBar';
 import {
   demoContinueLearning,
-  demoActivities,
   demoQuests,
-  demoLeaderboard,
   weeklyProgress,
 } from '@/data/demoData';
+import { useMemo } from 'react';
 import type { NavigateProps } from '@/pages/types';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+import { HeroCursorTrace } from '@/components/HeroCursorTrace';
+import { InfiniteTraceWidget } from '@/components/InfiniteTraceWidget';
+import { buildCompetitiveStandings } from '@/engine/competitiveArena';
 
 export function DashboardPage({ navigate }: NavigateProps) {
-  const { selectedStudent } = useStudentProfiles();
+  const { selectedStudent, students, xpTransactions } = useStudentProfiles();
   const dailyQuest = demoQuests.find((q) => q.frequency === 'daily' && q.status !== 'completed');
   const todayChallenge = dailyQuest || demoQuests[0];
-  const recentActivities = demoActivities.slice(0, 5);
-  const topPlayers = demoLeaderboard.slice(0, 5);
+  const recentActivities = xpTransactions.slice(0, 5);
+
+  const { entries: arenaStandings } = useMemo(
+    () =>
+      buildCompetitiveStandings(students, selectedStudent, xpTransactions, {
+        scope: 'all-time',
+        batchFilter: 'all',
+        campusFilter: 'all',
+        leagueFilter: 'all',
+      }),
+    [students, selectedStudent, xpTransactions]
+  );
+  const topPlayers = arenaStandings.slice(0, 5);
   const maxWeekly = Math.max(...weeklyProgress.map((d) => d.xp));
 
   return (
@@ -42,8 +55,9 @@ export function DashboardPage({ navigate }: NavigateProps) {
 
       {/* Welcome banner */}
       <Card className="mb-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-accent-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
-        <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <HeroCursorTrace />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-accent-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <StudentAvatar
               initials={selectedStudent.avatarInitials}
@@ -78,6 +92,11 @@ export function DashboardPage({ navigate }: NavigateProps) {
           </div>
         </div>
       </Card>
+
+      {/* Infinite Trace session telemetry widget */}
+      <div className="mb-6">
+        <InfiniteTraceWidget />
+      </div>
 
       {/* Summary stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -229,23 +248,33 @@ export function DashboardPage({ navigate }: NavigateProps) {
             </button>
           </div>
           <div className="space-y-1">
-            {recentActivities.map((act) => {
-              const Icon = activityIcon(act.type);
-              return (
-                <div key={act.id} className="flex items-center gap-3 py-2.5 px-2 rounded-lg hover:bg-ink-800 transition-colors">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${activityColor(act.type)}`}>
-                    <Icon className="w-4 h-4" />
+            {recentActivities.length > 0 ? (
+              recentActivities.map((act) => (
+                <div
+                  key={act.id}
+                  className="flex items-center gap-3 py-2.5 px-2 rounded-lg hover:bg-ink-800 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent-600/15 text-accent-400">
+                    <Zap className="w-4 h-4" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate">{act.title}</p>
-                    <p className="text-xs text-gray-500">{act.detail}</p>
+                    <p className="text-sm text-white truncate">{act.reason}</p>
+                    <p className="text-xs text-gray-500">
+                      {act.source.toUpperCase()} • {act.academicDate}
+                    </p>
                   </div>
-                  {act.xpEarned > 0 && (
-                    <span className="text-xs font-mono text-accent-400 shrink-0">+{act.xpEarned}</span>
+                  {act.amount > 0 && (
+                    <span className="text-xs font-mono text-accent-400 shrink-0">
+                      +{act.amount} XP
+                    </span>
                   )}
                 </div>
-              );
-            })}
+              ))
+            ) : (
+              <div className="py-8 text-center text-xs font-mono text-gray-500">
+                No recent activity recorded. Complete a quiz or game to earn XP!
+              </div>
+            )}
           </div>
         </Card>
       </div>
@@ -262,29 +291,43 @@ export function DashboardPage({ navigate }: NavigateProps) {
           </button>
         </div>
         <div className="space-y-1">
-          {topPlayers.map((entry) => (
-            <div
-              key={entry.id}
-              className={`flex items-center gap-4 py-2.5 px-3 rounded-lg transition-colors ${
-                entry.isCurrentUser ? 'bg-accent-600/10 border border-accent-500/20' : 'hover:bg-ink-800'
-              }`}
-            >
-              <span className={`w-7 text-center font-display font-bold ${
-                entry.rank === 1 ? 'text-warning-400' : entry.rank === 2 ? 'text-gray-300' : entry.rank === 3 ? 'text-warning-600' : 'text-gray-500'
-              }`}>
-                {entry.rank}
-              </span>
-              <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="sm" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">
-                  {entry.displayName}
-                  {entry.isCurrentUser && <span className="text-accent-400 text-xs ml-2">(You)</span>}
-                </p>
-                <p className="text-xs text-gray-500">Level {entry.level}</p>
+          {topPlayers.length > 0 ? (
+            topPlayers.map((entry) => (
+              <div
+                key={entry.id}
+                className={`flex items-center gap-4 py-2.5 px-3 rounded-lg transition-colors ${
+                  entry.isCurrentUser ? 'bg-accent-600/10 border border-accent-500/20' : 'hover:bg-ink-800'
+                }`}
+              >
+                <span
+                  className={`w-7 text-center font-display font-bold ${
+                    entry.rank === 1
+                      ? 'text-warning-400'
+                      : entry.rank === 2
+                      ? 'text-gray-300'
+                      : entry.rank === 3
+                      ? 'text-warning-600'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {entry.rank}
+                </span>
+                <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">
+                    {entry.displayName}
+                    {entry.isCurrentUser && <span className="text-accent-400 text-xs ml-2">(You)</span>}
+                  </p>
+                  <p className="text-xs text-gray-500">Level {entry.level}</p>
+                </div>
+                <span className="text-sm font-mono text-gray-300">{entry.totalXP.toLocaleString()} XP</span>
               </div>
-              <span className="text-sm font-mono text-gray-300">{entry.totalXP.toLocaleString()} XP</span>
+            ))
+          ) : (
+            <div className="py-6 text-center text-xs font-mono text-gray-500">
+              No players ranked yet. Complete learning activities to set the first score!
             </div>
-          ))}
+          )}
         </div>
       </Card>
     </div>

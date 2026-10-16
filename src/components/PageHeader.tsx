@@ -3,7 +3,7 @@ import { Bell } from 'lucide-react';
 import { useState } from 'react';
 import { StudentAvatar } from './StudentAvatar';
 import { ThemeToggle } from './ThemeToggle';
-import { DemoStudentSelector } from './DemoStudentSelector';
+import { UserProfileDropdown } from './UserProfileDropdown';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
 import { demoNotifications } from '@/data/demoData';
 
@@ -27,7 +27,6 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
 
       <div className="flex items-center gap-2.5">
         {actions}
-        <DemoStudentSelector />
         <ThemeToggle />
         <div className="relative">
           <button
@@ -71,16 +70,8 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
             </>
           )}
         </div>
-        <div className="flex items-center gap-2.5 pl-2.5 border-l border-line">
-          <StudentAvatar
-            initials={selectedStudent.avatarInitials}
-            color={selectedStudent.avatarColor}
-            size="md"
-          />
-          <div className="hidden sm:block">
-            <p className="text-sm font-medium text-ivory">{selectedStudent.displayName}</p>
-            <p className="text-xs text-muted">Level {selectedStudent.level}</p>
-          </div>
+        <div className="pl-2 border-l border-line">
+          <UserProfileDropdown />
         </div>
       </div>
     </header>
