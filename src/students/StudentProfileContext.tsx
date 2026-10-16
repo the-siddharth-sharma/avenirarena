@@ -40,7 +40,7 @@ export const defaultCadetStudent: StudentProfile = {
   courseBranch: 'Computer Science & Engineering',
   year: 'Year 1',
   batch: 'Batch 2026',
-  campus: 'Mirai Ghaziabad',
+  campus: 'Mirai School Ghaziabad',
   joinedDate: new Date().toISOString(),
   profileCompletion: 50,
 };
@@ -212,7 +212,7 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
             courseBranch: 'Computer Science & Engineering',
             year: u.year ? `${u.year} Year` : 'Year 1',
             batch: u.batch || 'Batch 2026',
-            campus: u.campus || 'Mirai Ghaziabad',
+            campus: u.campus || 'Mirai School Ghaziabad',
             joinedDate: u.createdAt || new Date().toISOString(),
             profileCompletion: u.isSetupComplete ? 100 : 50,
           };
@@ -240,7 +240,7 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
             courseBranch: 'Computer Science & Engineering',
             year: userProfile?.year ? `${userProfile.year} Year` : 'Year 1',
             batch: userProfile?.batch || 'Batch 2026',
-            campus: userProfile?.campus || 'Mirai Ghaziabad',
+            campus: userProfile?.campus || 'Mirai School Ghaziabad',
             joinedDate: userProfile?.createdAt || new Date().toISOString(),
             profileCompletion: userProfile?.isSetupComplete ? 100 : 50,
           };

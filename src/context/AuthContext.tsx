@@ -239,7 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: '',
         username: '',
         avatarUrl: user.photoURL,
-        campus: 'Mirai Ghaziabad',
+        campus: 'Mirai School Ghaziabad',
         year: '1st',
         batch: '2026-2030',
         bio: 'First-year cadet in AVENIR ARENA.',

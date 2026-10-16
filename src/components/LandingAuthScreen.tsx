@@ -62,7 +62,7 @@ export function LandingAuthScreen() {
               </span>
             </span>
             <p className="text-[10px] text-muted font-mono tracking-wide">
-              by Quasar · Mirai Institute of Technology
+              by Quasar · Mirai School of Technology
             </p>
           </div>
         </div>

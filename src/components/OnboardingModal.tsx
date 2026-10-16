@@ -19,22 +19,22 @@ import { FUTURISTIC_AVATARS, type AvatarOption } from '@/data/avatars';
 
 const CAMPUS_OPTIONS = [
   {
-    id: 'Mirai Ghaziabad',
-    name: 'Mirai Ghaziabad',
+    id: 'Mirai School Ghaziabad',
+    name: 'Mirai School Ghaziabad',
     subtitle: 'Cyber & Systems Engineering Complex',
     code: 'GZB-01',
     region: 'North Sector',
   },
   {
-    id: 'Mirai Jaipur',
-    name: 'Mirai Jaipur',
+    id: 'Mirai School Jaipur',
+    name: 'Mirai School Jaipur',
     subtitle: 'AI & Quantum Robotics Research Hub',
     code: 'JPR-02',
     region: 'West Sector',
   },
   {
-    id: 'Mirai Bangalore',
-    name: 'Mirai Bangalore',
+    id: 'Mirai School Bangalore',
+    name: 'Mirai School Bangalore',
     subtitle: 'Advanced Cloud & Semiconductor Division',
     code: 'BLR-03',
     region: 'South Sector',
@@ -96,7 +96,7 @@ export function OnboardingModal() {
     }
     return '';
   });
-  const [selectedCampus, setSelectedCampus] = useState<string>('Mirai Ghaziabad');
+  const [selectedCampus, setSelectedCampus] = useState<string>('Mirai School Ghaziabad');
   const [selectedYear, setSelectedYear] = useState<string>('1st');
   const [batch, setBatch] = useState<string>('2026-2030');
 

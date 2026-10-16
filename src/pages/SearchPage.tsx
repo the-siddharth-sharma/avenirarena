@@ -22,9 +22,9 @@ interface SearchPageProps {
 
 const CAMPUS_FILTERS = [
   { id: 'all', label: 'All Sectors' },
-  { id: 'Mirai Ghaziabad', label: 'Mirai Ghaziabad' },
-  { id: 'Mirai Bangalore', label: 'Mirai Bangalore' },
-  { id: 'Mirai Jaipur', label: 'Mirai Jaipur' },
+  { id: 'Mirai School Ghaziabad', label: 'Mirai School Ghaziabad' },
+  { id: 'Mirai School Bangalore', label: 'Mirai School Bangalore' },
+  { id: 'Mirai School Jaipur', label: 'Mirai School Jaipur' },
 ];
 
 export function SearchPage({ navigate }: SearchPageProps) {
@@ -61,7 +61,7 @@ export function SearchPage({ navigate }: SearchPageProps) {
     <div className="animate-fade-in space-y-6 max-w-6xl mx-auto">
       <PageHeader
         title="Global Cadet Search"
-        subtitle="Real-time operative radar across Mirai Academy sectors. Locate peers, inspect dossiers, and initiate challenges."
+        subtitle="Real-time operative radar across Mirai School of Technology sectors. Locate peers, inspect dossiers, and initiate challenges."
       />
 
       {/* Frosted Glass Search & Filter Command Bar */}

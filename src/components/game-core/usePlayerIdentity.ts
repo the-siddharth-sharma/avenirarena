@@ -41,7 +41,7 @@ export function usePlayerIdentity(): PlayerIdentity & {
     );
   }, [username]);
 
-  const campus = userProfile?.campus || 'Mirai Institute of Technology';
+  const campus = userProfile?.campus || 'Mirai School of Technology';
   const year = userProfile?.year || '1st';
 
   const [avatarImage, setAvatarImage] = useState<HTMLImageElement | null>(() => {

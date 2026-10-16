@@ -167,7 +167,7 @@ export const firestoreService = {
       lastName: data.lastName || existing.lastName || '',
       username: data.username || existing.username || '',
       avatarUrl: data.avatarUrl || existing.avatarUrl || '',
-      campus: data.campus || existing.campus || 'Mirai Ghaziabad',
+      campus: data.campus || existing.campus || 'Mirai School Ghaziabad',
       year: data.year || existing.year || '1st',
       batch: data.batch || existing.batch || '2026-2030',
       bio: data.bio || existing.bio || 'Cadet Operative in AVENIR ARENA',

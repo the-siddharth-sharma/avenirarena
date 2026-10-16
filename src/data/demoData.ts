@@ -26,7 +26,7 @@ export const demoStudent: Student = {
   courseBranch: 'Computer Science & Engineering',
   year: 'Year 1',
   batch: 'Batch 2026',
-  campus: 'Mirai Ghaziabad',
+  campus: 'Mirai School Ghaziabad',
   joinedDate: new Date().toISOString(),
 };
 

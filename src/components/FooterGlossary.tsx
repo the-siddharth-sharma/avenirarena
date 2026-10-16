@@ -79,7 +79,7 @@ export function FooterGlossary() {
       <div className="mt-6 pt-4 border-t border-line/30 flex flex-col sm:flex-row items-center justify-between text-[11px] font-mono text-muted gap-2">
         <span>AVENIR ARENA v2.4 · Engineering Learning Portal</span>
         <div className="flex items-center gap-3">
-          <span>Mirai Institute of Technology</span>
+          <span>Mirai School of Technology</span>
           <span>·</span>
           <span>Quasar Engineering Labs</span>
         </div>
