@@ -109,23 +109,96 @@ interface AuthContextType {
 }
 
 const AUTH_STORAGE_KEY = 'avenir-auth-user-v1';
+const PROFILE_STORAGE_KEY = 'avenir-user-profile-v1';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Synchronously restore user from cache on initial evaluation to eliminate reload latency
+function getInitialStoredUser(): User | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const user: User = JSON.parse(raw);
+    if (user?.token) {
+      try {
+        const payload = jwtDecode<GoogleTokenPayload>(user.token);
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          localStorage.removeItem(PROFILE_STORAGE_KEY);
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+// Synchronously restore profile from cache on initial evaluation so UI renders with 0ms delay
+function getInitialStoredProfile(): UserProfile | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+
+    const authStored = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (authStored) {
+      const u = JSON.parse(authStored);
+      const localUsers = JSON.parse(localStorage.getItem('avenir_firestore_users_v1') || '{}');
+      if (localUsers[u.uid]) {
+        const doc = localUsers[u.uid];
+        return {
+          uid: doc.uid,
+          email: doc.email,
+          username: doc.username,
+          firstName: doc.firstName,
+          lastName: doc.lastName,
+          avatarUrl: doc.avatarUrl,
+          campus: doc.campus,
+          year: doc.year || '1st Year',
+          batch: doc.batch,
+          bio: doc.bio,
+          socialLinks: doc.socialLinks,
+          xp: doc.xp || 0,
+          academicXP: doc.academicXP ?? doc.xp ?? 0,
+          gamesPlayed: doc.gamesPlayed || 0,
+          infiniteTraceStreak: doc.infiniteTraceStreak || 0,
+          role: doc.role,
+          isSetupComplete: Boolean(doc.isSetupComplete),
+          createdAt: doc.createdAt,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  // Synchronous cache hydration ensures 0ms render latency on page reload
+  const [currentUser, setCurrentUser] = useState<User | null>(getInitialStoredUser);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(getInitialStoredProfile);
+  // Zero latency: Start with isLoading false whenever cached session exists or for guest
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
-  // Sync profile directly from Firestore
+  // Sync profile from Firestore with timeout resilience and local caching
   const syncProfileFromFirestore = async (uid: string): Promise<UserProfile | null> => {
     try {
-      // 1. Query Firestore users collection directly
+      // 1. Query Firestore users collection with timeout to avoid network stalls
       try {
         const userRef = doc(db, 'users', uid);
-        const userSnap = await getDoc(userRef);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Firestore read timeout')), 2500)
+        );
+        const userSnap = await Promise.race([getDoc(userRef), timeoutPromise]);
+
         if (userSnap.exists()) {
           const docData = userSnap.data();
           const xpVal = Number(docData.academicXP ?? docData.xp ?? 0);
@@ -150,10 +223,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             createdAt: docData.createdAt || new Date().toISOString(),
           };
           setUserProfile(profile);
+          try {
+            localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+          } catch {}
           return profile;
         }
       } catch (firestoreErr) {
-        console.warn('[AVENIR ARENA FIRESTORE] Direct Firestore read failed, trying service layer:', firestoreErr);
+        console.warn('[AVENIR ARENA FIRESTORE] Direct Firestore read failed/timed out, using cache:', firestoreErr);
       }
 
       // 2. Fallback to service layer
@@ -181,6 +257,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           createdAt: localDoc.createdAt,
         };
         setUserProfile(profile);
+        try {
+          localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+        } catch {}
         return profile;
       }
     } catch (err) {
@@ -189,13 +268,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
-  // Restore authenticated session on mount and listen to Firebase Auth state changes
+  // Restore authenticated session and listen to Firebase Auth in the background
   useEffect(() => {
     let isMounted = true;
 
+    // Immediately bind traceEngine to authenticated student if present
+    const activeUid = currentUser?.uid || getInitialStoredUser()?.uid;
+    if (activeUid) {
+      traceEngine.setActiveStudent(activeUid);
+      // Non-blocking background revalidation (Stale-While-Revalidate)
+      syncProfileFromFirestore(activeUid).catch(() => {});
+    }
+
     // Listen to Firebase Auth state changes
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser && isMounted) {
+      if (!isMounted) return;
+      if (fbUser) {
         const user: User = {
           uid: fbUser.uid,
           displayName: fbUser.displayName || 'Google Cadet',
@@ -205,62 +293,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
         };
         setCurrentUser(user);
+        try {
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+        } catch {}
         traceEngine.setActiveStudent(user.uid);
-        await syncProfileFromFirestore(user.uid);
-        setIsLoading(false);
+        // Non-blocking background revalidation
+        syncProfileFromFirestore(user.uid).catch(() => {});
       }
+      setIsLoading(false);
     });
-
-    async function restoreSession() {
-      try {
-        const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (stored) {
-          const user: User = JSON.parse(stored);
-
-          // Check if Google token has expired
-          if (user && user.token) {
-            try {
-              const payload = jwtDecode<GoogleTokenPayload>(user.token);
-              if (payload.exp && payload.exp * 1000 < Date.now()) {
-                console.warn('[AVENIR ARENA AUTH] Saved session token has expired. Logging out.');
-                localStorage.removeItem(AUTH_STORAGE_KEY);
-                if (isMounted) {
-                  setCurrentUser(null);
-                  setUserProfile(null);
-                  traceEngine.setActiveStudent('');
-                  setIsLoading(false);
-                }
-                return;
-              }
-            } catch {
-              localStorage.removeItem(AUTH_STORAGE_KEY);
-              if (isMounted) {
-                setCurrentUser(null);
-                setUserProfile(null);
-                traceEngine.setActiveStudent('');
-                setIsLoading(false);
-              }
-              return;
-            }
-          }
-
-          if (user && user.uid && isMounted) {
-            setCurrentUser(user);
-            traceEngine.setActiveStudent(user.uid);
-            await syncProfileFromFirestore(user.uid);
-          }
-        }
-      } catch (e) {
-        console.error('[AVENIR ARENA AUTH] Session restore error:', e);
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    restoreSession();
 
     return () => {
       isMounted = false;
@@ -332,6 +373,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         setUserProfile(profile);
+        try {
+          localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+        } catch {
+          // Ignore
+        }
       } else {
         // Initialize new player document with academicXP: 0 and infiniteTraceStreak: 0
         const isUserAdmin = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
@@ -360,6 +406,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         await setDoc(userRef, initialData, { merge: true });
         setUserProfile(initialData as UserProfile);
+        try {
+          localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(initialData));
+        } catch {
+          // Ignore
+        }
       }
     } catch (firestoreErr) {
       console.error('[AVENIR ARENA AUTH] Firestore upsert on login error:', firestoreErr);
@@ -486,6 +537,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     setUserProfile(updatedProfile);
+    try {
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(updatedProfile));
+    } catch {
+      // Ignore
+    }
 
     // Sync username & avatar into currentUser for global nav consistency
     const updatedUser: User = {
@@ -532,7 +588,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       gamesPlayed: newGamesPlayed,
     });
 
-    setUserProfile((prev) => (prev ? { ...prev, xp: newXP, academicXP: newXP, gamesPlayed: newGamesPlayed } : null));
+    setUserProfile((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, xp: newXP, academicXP: newXP, gamesPlayed: newGamesPlayed };
+      try {
+        localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore
+      }
+      return updated;
+    });
   };
 
   /**
@@ -555,6 +620,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       localStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.removeItem(PROFILE_STORAGE_KEY);
       sessionStorage.removeItem('avenir_admin_session');
       sessionStorage.removeItem('avenir_admin_email');
     } catch {

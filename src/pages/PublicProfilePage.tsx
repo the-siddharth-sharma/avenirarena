@@ -31,11 +31,6 @@ interface PublicProfilePageProps {
 
 export function PublicProfilePage({ playerId = 'me', navigate }: PublicProfilePageProps) {
   const { currentUser, userProfile } = useAuth();
-  const [copied, setCopied] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [profileDoc, setProfileDoc] = useState<UserProfileDoc | null>(null);
-  const [notFound, setNotFound] = useState(false);
-
   // Check if target is current authenticated user
   const isTargetingSelf =
     playerId === 'me' ||
@@ -43,10 +38,43 @@ export function PublicProfilePage({ playerId = 'me', navigate }: PublicProfilePa
     (userProfile?.username && playerId.toLowerCase() === userProfile.username.toLowerCase()) ||
     (currentUser?.displayName && playerId === currentUser.displayName);
 
+  const initialSelfDoc: UserProfileDoc | null =
+    isTargetingSelf && userProfile && currentUser
+      ? {
+          uid: currentUser.uid,
+          email: currentUser.email,
+          firstName: userProfile.firstName || '',
+          lastName: userProfile.lastName || '',
+          username: userProfile.username || 'cadet',
+          avatarUrl: userProfile.avatarUrl || currentUser.photoURL,
+          campus: userProfile.campus,
+          year: userProfile.year,
+          batch: userProfile.batch,
+          bio: userProfile.bio || 'Cadet Operative in AVENIR ARENA',
+          xp: userProfile.academicXP ?? userProfile.xp ?? 0,
+          gamesPlayed: userProfile.gamesPlayed ?? 0,
+          infiniteTraceStreak: userProfile.infiniteTraceStreak ?? 0,
+          socialLinks: {
+            linkedin: userProfile.socialLinks?.linkedin || '',
+            other: userProfile.socialLinks?.other || '',
+          },
+          role: userProfile.role || 'cadet',
+          isSetupComplete: true,
+          createdAt: userProfile.createdAt || new Date().toISOString(),
+        }
+      : null;
+
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(() => initialSelfDoc === null);
+  const [profileDoc, setProfileDoc] = useState<UserProfileDoc | null>(initialSelfDoc);
+  const [notFound, setNotFound] = useState(false);
+
   // Fetch from Firestore
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
+    if (!profileDoc) {
+      setLoading(true);
+    }
     setNotFound(false);
 
     async function loadProfile() {

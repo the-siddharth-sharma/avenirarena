@@ -174,10 +174,58 @@ function applyDerivedRewards(studentId: string, state: StudentProgress, now: Dat
   return { state: next, xp };
 }
 
+function getInitialSelectedStudentId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const rawUser = localStorage.getItem('avenir-google-user-v1');
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      return u.uid || '';
+    }
+  } catch {}
+  return '';
+}
+
+function getInitialStudents(): StudentProfile[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const rawUser = localStorage.getItem('avenir-google-user-v1');
+    const rawProfile = localStorage.getItem('avenir-user-profile-v1');
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      const profile = rawProfile ? JSON.parse(rawProfile) : null;
+      const name = profile?.username || profile?.displayName || u.displayName || 'Cadet Operative';
+      const realXP = profile?.academicXP ?? profile?.xp ?? 0;
+      const initialStudent: StudentProfile = {
+        id: u.uid,
+        studentId: u.uid.replace('google-', 'G-').slice(0, 10).toUpperCase(),
+        displayName: name,
+        email: u.email || '',
+        avatarInitials: getInitials(name),
+        avatarColor: 'from-gold-500 to-gold-700',
+        level: Math.max(1, Math.floor(Math.sqrt(realXP / 50)) + 1),
+        totalXP: realXP,
+        currentLevelXP: realXP % 100,
+        nextLevelXP: 100,
+        streak: profile?.infiniteTraceStreak ?? 0,
+        completedQuests: profile?.gamesPlayed ?? 0,
+        courseBranch: 'Computer Science & Engineering',
+        year: profile?.year ? (profile.year.includes('Year') || profile.year.includes('20') ? profile.year : `${profile.year} Year`) : 'Year 1',
+        batch: profile?.batch || '2025-2029',
+        campus: profile?.campus || 'MSOT Ghaziabad',
+        joinedDate: profile?.createdAt || new Date().toISOString(),
+        profileCompletion: profile?.isSetupComplete ? 100 : 50,
+      };
+      return [initialStudent];
+    }
+  } catch {}
+  return [];
+}
+
 export function StudentProfileProvider({ children }: { children: ReactNode }) {
   const { currentUser, userProfile, updateUserXP } = useAuth();
-  const [students, setStudents] = useState<StudentProfile[]>([]);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [students, setStudents] = useState<StudentProfile[]>(getInitialStudents);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(getInitialSelectedStudentId);
   const [progress, setProgress] = useState<PersistedProgressState>(getInitialProgress);
 
   // Synchronize authenticated user and real Firestore users

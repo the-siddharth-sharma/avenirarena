@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowDownRight,
@@ -34,6 +34,17 @@ import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
 
+const LEADERBOARD_CACHE_KEY = 'avenir_leaderboard_cache_v1';
+
+function getInitialLeaderboardEntries(): ArenaEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = sessionStorage.getItem(LEADERBOARD_CACHE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
 export function LeaderboardPage() {
   const { selectedStudent } = useStudentProfiles();
   const { currentUser, userProfile } = useAuth();
@@ -50,9 +61,9 @@ export function LeaderboardPage() {
   // Rollover simulation message/modal state
   const [rolloverNotice, setRolloverNotice] = useState<string | null>(null);
 
-  // Dynamic Firestore Leaderboard State
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [firestoreEntries, setFirestoreEntries] = useState<ArenaEntry[]>([]);
+  // Dynamic Firestore Leaderboard State (SWR cache for 0ms reload latency)
+  const [firestoreEntries, setFirestoreEntries] = useState<ArenaEntry[]>(getInitialLeaderboardEntries);
+  const [isLoading, setIsLoading] = useState<boolean>(() => getInitialLeaderboardEntries().length === 0);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -66,17 +77,23 @@ export function LeaderboardPage() {
     let isMounted = true;
 
     async function fetchTop10FromFirestore() {
-      setIsLoading(true);
+      if (firestoreEntries.length === 0) {
+        setIsLoading(true);
+      }
       try {
         const usersRef = collection(db, 'users');
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Firestore leaderboard timeout')), 2500)
+        );
+
         // Fetch top 10 users strictly ordered by academicXP descending
         let q = query(usersRef, orderBy('academicXP', 'desc'), limit(10));
-        let snapshot = await getDocs(q);
+        let snapshot = await Promise.race([getDocs(q), timeoutPromise]);
 
         // Resilient fallback: If no records match academicXP, query with xp
         if (snapshot.empty) {
           q = query(usersRef, orderBy('xp', 'desc'), limit(10));
-          snapshot = await getDocs(q);
+          snapshot = await Promise.race([getDocs(q), timeoutPromise]);
         }
 
         if (isMounted) {
@@ -134,12 +151,15 @@ export function LeaderboardPage() {
               };
             });
             setFirestoreEntries(mapped);
-          } else {
+            try {
+              sessionStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(mapped));
+            } catch {}
+          } else if (firestoreEntries.length === 0) {
             setFirestoreEntries([]);
           }
         }
       } catch (err) {
-        console.error('[AVENIR ARENA LEADERBOARD] Failed to fetch top Firestore users:', err);
+        console.warn('[AVENIR ARENA LEADERBOARD] Using cached leaderboard data:', err);
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -174,7 +194,17 @@ export function LeaderboardPage() {
   });
 
   // Purely dynamic Firestore entries (ordered by academicXP descending)
-  const baseEntries = firestoreEntries;
+  const baseEntries = useMemo(() => {
+    return firestoreEntries.map((entry) => ({
+      ...entry,
+      isCurrentUser: Boolean(
+        currentUser &&
+          (entry.id === currentUser.uid ||
+            (entry as any).uid === currentUser.uid ||
+            (currentUser.email && (entry as any).email === currentUser.email))
+      ),
+    }));
+  }, [firestoreEntries, currentUser]);
   const filteredEntries = baseEntries.filter((entry) => {
     if (campusFilter !== 'all' && entry.campus !== campusFilter) return false;
     if (leagueFilter !== 'all' && entry.leagueTier !== leagueFilter) return false;
