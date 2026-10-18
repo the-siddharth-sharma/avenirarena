@@ -11,10 +11,25 @@ import {
   Users,
   Compass,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { Card } from '@/components/Card';
 import { PageHeader } from '@/components/PageHeader';
-import { firestoreService, type UserProfileDoc } from '@/firebaseConfig';
+import { db } from '@/firebase';
+import { collection, getDocs } from 'firebase/firestore';
+
+export interface FirestoreCadet {
+  uid: string;
+  displayName: string;
+  photoURL?: string;
+  avatarUrl?: string;
+  email?: string;
+  campus?: string;
+  academicXP?: number;
+  xp?: number;
+  username?: string;
+  role?: string;
+}
 
 interface SearchPageProps {
   navigate: (path: string) => void;
@@ -30,16 +45,68 @@ const CAMPUS_FILTERS = [
 export function SearchPage({ navigate }: SearchPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCampus, setSelectedCampus] = useState('all');
-  const [results, setResults] = useState<UserProfileDoc[]>([]);
+  const [results, setResults] = useState<FirestoreCadet[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasQueried, setHasQueried] = useState(false);
 
-  // Debounced search query against Firestore
+  /**
+   * Search users directly from Firebase Firestore users collection
+   * Performs client-side partial matching for callsigns, names, and emails
+   */
+  const searchUsers = async (queryTerm: string, campus: string = 'all'): Promise<FirestoreCadet[]> => {
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+
+      const users: FirestoreCadet[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const effectiveXP = Number(data.academicXP ?? data.xp ?? 0);
+        const name =
+          data.displayName ||
+          data.username ||
+          (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : `Cadet-${docSnap.id.slice(0, 4)}`);
+
+        return {
+          uid: docSnap.id,
+          displayName: name,
+          photoURL: data.photoURL || data.avatarUrl || '',
+          email: data.email || '',
+          campus: data.campus || 'MSOT Ghaziabad',
+          academicXP: effectiveXP,
+          xp: effectiveXP,
+          username: data.username || '',
+          role: data.role || 'cadet',
+        };
+      });
+
+      const term = queryTerm.trim().toLowerCase();
+
+      // Client-side filtering for partial matches
+      return users.filter((u) => {
+        if (campus !== 'all' && u.campus?.toLowerCase() !== campus.toLowerCase()) {
+          return false;
+        }
+
+        if (!term) return true;
+
+        return (
+          u.displayName.toLowerCase().includes(term) ||
+          (u.email || '').toLowerCase().includes(term) ||
+          (u.username || '').toLowerCase().includes(term)
+        );
+      });
+    } catch (err) {
+      console.error('[AVENIR ARENA SEARCH] Failed to search users from Firestore:', err);
+      return [];
+    }
+  };
+
+  // Debounced search query against Firestore (300ms delay)
   useEffect(() => {
     setIsLoading(true);
     const handler = setTimeout(async () => {
       try {
-        const users = await firestoreService.searchUsers(searchTerm, selectedCampus);
+        const users = await searchUsers(searchTerm, selectedCampus);
         setResults(users);
       } catch (err) {
         console.error('Failed to search users from Firestore:', err);
@@ -82,8 +149,15 @@ export function SearchPage({ navigate }: SearchPageProps) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by callsign, real name, email, or campus..."
-              className="w-full pl-12 pr-12 py-3.5 bg-obsidian/90 border border-gold-400/30 rounded-xl text-ivory placeholder-muted/60 text-sm font-sans focus:outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-400/30 shadow-inner transition-all"
+              className="w-full pl-12 pr-28 py-3.5 bg-obsidian/90 border border-gold-400/30 rounded-xl text-ivory placeholder-muted/60 text-sm font-sans focus:outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-400/30 shadow-inner transition-all"
             />
+
+            {isLoading && (
+              <div className="absolute right-12 flex items-center gap-1.5 text-xs text-gold-400 font-mono">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-gold-400" />
+                <span className="hidden sm:inline">Searching...</span>
+              </div>
+            )}
 
             {searchTerm && (
               <button
@@ -163,15 +237,9 @@ export function SearchPage({ navigate }: SearchPageProps) {
         </div>
       ) : results.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {results.map((player) => {
-            const displayName =
-              player.firstName && player.lastName
-                ? `${player.firstName} ${player.lastName}`
-                : player.username || player.email.split('@')[0];
-
-            return (
-              <Card
-                key={player.uid}
+          {results.map((player) => (
+            <Card
+              key={player.uid}
                 onClick={() => navigate(`/player/${player.uid}`)}
                 className="p-5 border-line bg-graphite/80 hover:bg-graphite hover:border-gold-400/50 transition-all duration-300 cursor-pointer group shadow-lg hover:shadow-[0_0_25px_rgba(208,180,119,0.15)] flex flex-col justify-between"
               >
@@ -207,40 +275,42 @@ export function SearchPage({ navigate }: SearchPageProps) {
                   {/* Identity Row */}
                   <div className="flex items-center gap-3.5">
                     <div className="w-13 h-13 rounded-full border-2 border-gold-400/40 p-0.5 bg-obsidian shrink-0 group-hover:border-gold-400 transition-colors overflow-hidden">
-                      {player.avatarUrl ? (
+                      {player.photoURL ? (
                         <img
-                          src={player.avatarUrl}
-                          alt={displayName}
+                          src={player.photoURL}
+                          alt={player.displayName}
                           className="w-12 h-12 rounded-full object-cover"
                         />
                       ) : (
                         <div className="w-12 h-12 rounded-full bg-gold-400/10 flex items-center justify-center text-gold-400 font-mono font-bold text-sm">
-                          {displayName.slice(0, 2).toUpperCase()}
+                          {(player.displayName || 'AA').slice(0, 2).toUpperCase()}
                         </div>
                       )}
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <h4 className="font-display font-semibold text-ivory text-sm truncate group-hover:text-gold-400 transition-colors">
-                        {displayName}
+                        {player.displayName}
                       </h4>
-                      <p className="text-xs font-mono text-gold-400/90 truncate">
-                        @{player.username || 'cadet'}
-                      </p>
+                      {player.username && (
+                        <p className="text-xs font-mono text-gold-400/90 truncate">
+                          @{player.username}
+                        </p>
+                      )}
                       <p className="text-[11px] font-mono text-muted flex items-center gap-1 mt-0.5 truncate">
                         <MapPin className="w-3 h-3 shrink-0 text-muted" />
-                        <span className="truncate">{player.campus}</span>
+                        <span className="truncate">{player.campus || 'MSOT Ghaziabad'}</span>
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Bottom Stats & Action link */}
+                {/* Bottom Stats: Academic XP & Action link */}
                 <div className="mt-5 pt-3.5 border-t border-line/60 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-1.5 font-mono">
                     <Zap className="w-3.5 h-3.5 text-gold-400" />
-                    <span className="text-ivory font-bold">{player.xp?.toLocaleString() || 0}</span>
-                    <span className="text-[10px] text-muted">XP</span>
+                    <span className="text-ivory font-bold">{player.academicXP?.toLocaleString() || 0}</span>
+                    <span className="text-[10px] text-muted">Academic XP</span>
                   </div>
 
                   <span className="text-xs font-mono text-gold-400 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
@@ -248,8 +318,7 @@ export function SearchPage({ navigate }: SearchPageProps) {
                   </span>
                 </div>
               </Card>
-            );
-          })}
+            ))}
         </div>
       ) : (
         /* Empty State */
@@ -259,7 +328,7 @@ export function SearchPage({ navigate }: SearchPageProps) {
           </div>
           <div>
             <h3 className="font-display font-bold text-ivory text-base">
-              No players found in this sector.
+              No cadets found in the Arena.
             </h3>
             <p className="text-xs text-muted font-mono mt-1">
               Radar scan yielded no matching callsigns or operatives matching your criteria.
