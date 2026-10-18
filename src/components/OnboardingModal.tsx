@@ -13,8 +13,12 @@ import {
   ArrowLeft,
   ChevronRight,
   Flame,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth, checkUsernameUnique } from '@/context/AuthContext';
+import { useRouter } from '@/router';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@/firebase';
 import { FUTURISTIC_AVATARS, type AvatarOption } from '@/data/avatars';
 
 const CAMPUS_OPTIONS = [
@@ -46,8 +50,11 @@ const BATCH_COHORT_PRESETS = ['2025-2029', '2026-2030', '2027-2031', '2028-2032'
 
 export function OnboardingModal() {
   const { currentUser, isOnboardingRequired, saveUserProfile } = useAuth();
+  const { navigate } = useRouter();
 
   const [step, setStep] = useState<1 | 2>(1);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string>('');
 
   // Avatar choices: Include Google photo if present
   const avatarOptions: AvatarOption[] = useMemo(() => {
@@ -206,22 +213,100 @@ export function OnboardingModal() {
     }
   };
 
-  const handleSubmitProfile = () => {
-    if (!isStep1Valid || !isStep2Valid || isBatchPriorTo2025) return;
+  const handleCompleteSetup = async () => {
+    setSubmitError('');
 
-    saveUserProfile({
-      username: username.trim(),
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      avatarUrl: selectedAvatarUrl,
-      campus: selectedCampus,
-      year: yearOfStudy,
-      batch: batchCohort.trim(),
-      socialLinks: {
-        linkedin: linkedinUrl.trim(),
-        other: otherUrl.trim(),
-      },
-    });
+    // Authentication Guard: Ensure user is authenticated before attempting to write to the database
+    if (!currentUser || !currentUser.uid) {
+      setSubmitError('Authentication required. Please sign in with Google to complete registration.');
+      return;
+    }
+
+    // Validation: Ensure campus, yearOfStudy, and batchCohort are not empty
+    if (!selectedCampus || !selectedCampus.trim()) {
+      setSubmitError('Please select a campus to continue.');
+      return;
+    }
+
+    if (!yearOfStudy || !yearOfStudy.trim()) {
+      setSubmitError('Please select your current year of study.');
+      return;
+    }
+
+    if (!batchCohort || !batchCohort.trim()) {
+      setSubmitError('Please select or specify a valid batch cohort (e.g., 2025-2029).');
+      return;
+    }
+
+    if (isBatchPriorTo2025) {
+      setSubmitError(academicYearErrorMessage);
+      return;
+    }
+
+    if (!isBatchValid) {
+      setSubmitError('Batch cohort must be in YYYY-YYYY format (e.g., 2025-2029).');
+      return;
+    }
+
+    if (!isStep1Valid) {
+      setStep(1);
+      setSubmitError('Please select a callsign and avatar before finalizing setup.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // 1. Critical Firestore Data Upsert with { merge: true } to preserve existing XP or Streaks
+      const userRef = doc(db, 'users', currentUser.uid);
+      await setDoc(
+        userRef,
+        {
+          campus: selectedCampus,
+          yearOfStudy: yearOfStudy,
+          batchCohort: batchCohort.trim(),
+          isRegistered: true,
+          // Sync full cadet profile attributes for AuthContext and Leaderboard
+          username: username.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          avatarUrl: selectedAvatarUrl,
+          year: yearOfStudy,
+          batch: batchCohort.trim(),
+          isSetupComplete: true,
+          socialLinks: {
+            linkedin: linkedinUrl.trim(),
+            other: otherUrl.trim(),
+          },
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      // 2. Persist to AuthContext memory so isOnboardingRequired immediately resolves to false
+      await saveUserProfile({
+        username: username.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        avatarUrl: selectedAvatarUrl,
+        campus: selectedCampus,
+        year: yearOfStudy,
+        batch: batchCohort.trim(),
+        socialLinks: {
+          linkedin: linkedinUrl.trim(),
+          other: otherUrl.trim(),
+        },
+      });
+
+      // 3. Portal Ingress: Navigate user into the main application dashboard
+      navigate('/dashboard');
+      window.location.hash = '/dashboard';
+    } catch (err) {
+      console.error('[AVENIR ARENA ONBOARDING] Ingress registration failed:', err);
+      setSubmitError('Failed to establish database ingress. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -659,6 +744,22 @@ export function OnboardingModal() {
                   </span>
                 </div>
               </div>
+              {/* Graceful Submission Error Toast / Banner */}
+              {submitError && (
+                <div className="p-3.5 rounded-xl border border-crimson-400/40 bg-crimson-400/10 text-crimson-300 text-xs font-mono flex items-center justify-between gap-2 animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-crimson-400 shrink-0" />
+                    <span>{submitError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSubmitError('')}
+                    className="text-crimson-400 hover:text-crimson-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -668,8 +769,9 @@ export function OnboardingModal() {
           {step === 2 ? (
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setStep(1)}
-              className="px-4 py-2.5 rounded-xl border border-line bg-graphite hover:bg-elevated text-xs font-mono font-medium text-muted hover:text-ivory transition-colors flex items-center gap-1.5"
+              className="px-4 py-2.5 rounded-xl border border-line bg-graphite hover:bg-elevated disabled:opacity-50 text-xs font-mono font-medium text-muted hover:text-ivory transition-colors flex items-center gap-1.5"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to Identity</span>
@@ -694,12 +796,21 @@ export function OnboardingModal() {
           ) : (
             <button
               type="button"
-              disabled={!isStep2Valid || isBatchPriorTo2025}
-              onClick={handleSubmitProfile}
+              disabled={isSubmitting || !isStep2Valid || isBatchPriorTo2025}
+              onClick={handleCompleteSetup}
               className="px-6 py-2.5 rounded-xl border border-gold-400 bg-gold-400 hover:bg-gold-300 disabled:opacity-40 disabled:pointer-events-none text-obsidian text-xs font-bold font-mono flex items-center gap-2 transition-all shadow-[0_0_25px_rgba(208,180,119,0.4)] ml-auto active:scale-[0.98]"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Complete Character Setup & Ingress</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-obsidian" />
+                  <span>Authenticating Ingress...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>Complete Character Setup & Ingress</span>
+                </>
+              )}
             </button>
           )}
         </div>
