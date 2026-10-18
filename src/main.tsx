@@ -9,7 +9,7 @@ import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <GoogleOAuthProvider clientId="1026711910319-p2qmjc6nf4vu01uloio2ragu3c7iru1g.apps.googleusercontent.com">
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "1026711910319-p2qmjc6nf4vu01uloio2ragu3c7iru1g.apps.googleusercontent.com"}>
       <ThemeProvider>
         <AuthProvider>
           <StudentProfileProvider>

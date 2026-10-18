@@ -2,7 +2,10 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { jwtDecode } from 'jwt-decode';
 import type { CredentialResponse } from '@react-oauth/google';
 import { traceEngine } from '@/engine/infiniteTrace';
-import { firestoreService, type UserProfileDoc } from '@/firebaseConfig';
+import { firestoreService } from '@/firebaseConfig';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
+import { db, auth, googleProvider } from '@/firebase';
 
 export const ADMIN_EMAIL = 'siddharthsharma2649@gmail.com';
 
@@ -34,6 +37,7 @@ export interface UserProfile {
   socialLinks?: UserSocialLinks;
   bio?: string;
   xp?: number;
+  academicXP?: number;
   gamesPlayed?: number;
   infiniteTraceStreak?: number;
   role?: 'admin' | 'cadet';
@@ -118,26 +122,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Sync profile directly from Firestore
   const syncProfileFromFirestore = async (uid: string): Promise<UserProfile | null> => {
     try {
-      const doc = await firestoreService.getUserDoc(uid);
-      if (doc) {
+      // 1. Query Firestore users collection directly
+      try {
+        const userRef = doc(db, 'users', uid);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const docData = userSnap.data();
+          const xpVal = Number(docData.academicXP ?? docData.xp ?? 0);
+          const profile: UserProfile = {
+            uid: docData.uid || uid,
+            email: docData.email || '',
+            username: docData.username || '',
+            firstName: docData.firstName || '',
+            lastName: docData.lastName || '',
+            avatarUrl: docData.avatarUrl || docData.photoURL || '',
+            campus: docData.campus || 'MSOT Ghaziabad',
+            year: docData.year || '1st Year',
+            batch: docData.batch || '2025-2029',
+            bio: docData.bio,
+            socialLinks: docData.socialLinks,
+            xp: xpVal,
+            academicXP: xpVal,
+            gamesPlayed: docData.gamesPlayed ?? 0,
+            infiniteTraceStreak: docData.infiniteTraceStreak ?? 0,
+            role: docData.role || 'cadet',
+            isSetupComplete: Boolean(docData.isSetupComplete),
+            createdAt: docData.createdAt || new Date().toISOString(),
+          };
+          setUserProfile(profile);
+          return profile;
+        }
+      } catch (firestoreErr) {
+        console.warn('[AVENIR ARENA FIRESTORE] Direct Firestore read failed, trying service layer:', firestoreErr);
+      }
+
+      // 2. Fallback to service layer
+      const localDoc = await firestoreService.getUserDoc(uid);
+      if (localDoc) {
+        const xpVal = Number(localDoc.xp || 0);
         const profile: UserProfile = {
-          uid: doc.uid,
-          email: doc.email,
-          username: doc.username,
-          firstName: doc.firstName,
-          lastName: doc.lastName,
-          avatarUrl: doc.avatarUrl,
-          campus: doc.campus,
-          year: doc.year || '1st',
-          batch: doc.batch,
-          bio: doc.bio,
-          socialLinks: doc.socialLinks,
-          xp: doc.xp,
-          gamesPlayed: doc.gamesPlayed,
-          infiniteTraceStreak: doc.infiniteTraceStreak,
-          role: doc.role,
-          isSetupComplete: doc.isSetupComplete,
-          createdAt: doc.createdAt,
+          uid: localDoc.uid,
+          email: localDoc.email,
+          username: localDoc.username,
+          firstName: localDoc.firstName,
+          lastName: localDoc.lastName,
+          avatarUrl: localDoc.avatarUrl,
+          campus: localDoc.campus,
+          year: localDoc.year || '1st Year',
+          batch: localDoc.batch,
+          bio: localDoc.bio,
+          socialLinks: localDoc.socialLinks,
+          xp: xpVal,
+          academicXP: xpVal,
+          gamesPlayed: localDoc.gamesPlayed,
+          infiniteTraceStreak: localDoc.infiniteTraceStreak,
+          role: localDoc.role,
+          isSetupComplete: localDoc.isSetupComplete,
+          createdAt: localDoc.createdAt,
         };
         setUserProfile(profile);
         return profile;
@@ -148,9 +189,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
-  // Restore authenticated session on mount and validate token expiration
+  // Restore authenticated session on mount and listen to Firebase Auth state changes
   useEffect(() => {
     let isMounted = true;
+
+    // Listen to Firebase Auth state changes
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser && isMounted) {
+        const user: User = {
+          uid: fbUser.uid,
+          displayName: fbUser.displayName || 'Google Cadet',
+          email: fbUser.email || '',
+          photoURL:
+            fbUser.photoURL ||
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        };
+        setCurrentUser(user);
+        traceEngine.setActiveStudent(user.uid);
+        await syncProfileFromFirestore(user.uid);
+        setIsLoading(false);
+      }
+    });
 
     async function restoreSession() {
       try {
@@ -205,6 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -213,7 +273,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearError = () => setError(null);
 
   /**
-   * Save session and bind Infinite Trace to real Google UID, then query Firestore
+   * Save session, upsert user in Firestore, and bind Infinite Trace
    */
   const handleAuthSuccess = async (user: User) => {
     setCurrentUser(user);
@@ -227,34 +287,83 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthModalOpen(false);
     setError(null);
 
-    // Fetch existing user doc from Firestore
-    const existingDoc = await syncProfileFromFirestore(user.uid);
-    if (!existingDoc) {
-      // Initialize blank slate document in Firestore for new player
-      const isUserAdmin = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-      const newDoc = await firestoreService.setUserDoc(user.uid, {
-        uid: user.uid,
-        email: user.email,
-        firstName: '',
-        lastName: '',
-        username: '',
-        avatarUrl: user.photoURL,
-        campus: 'MSOT Ghaziabad',
-        year: '1st',
-        batch: '2026-2030',
-        bio: 'First-year cadet in AVENIR ARENA.',
-        xp: 0,
-        gamesPlayed: 0,
-        infiniteTraceStreak: 0,
-        socialLinks: { linkedin: '', other: '' },
-        role: isUserAdmin ? 'admin' : 'cadet',
-        isSetupComplete: false,
-      });
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
 
-      setUserProfile({
-        ...newDoc,
-        year: newDoc.year || '1st',
-      });
+      if (userSnap.exists()) {
+        const existingData = userSnap.data();
+        // Save user's uid, displayName, photoURL, email, campus to Firestore users collection
+        // CRITICAL: Do NOT overwrite existing academicXP or infiniteTraceStreak
+        await setDoc(
+          userRef,
+          {
+            uid: user.uid,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            email: user.email,
+            campus: existingData.campus || 'MSOT Ghaziabad',
+          },
+          { merge: true }
+        );
+
+        const xpVal = Number(existingData.academicXP ?? existingData.xp ?? 0);
+        const streakVal = Number(existingData.infiniteTraceStreak ?? 0);
+
+        const profile: UserProfile = {
+          uid: user.uid,
+          email: user.email,
+          username: existingData.username || user.displayName,
+          firstName: existingData.firstName || '',
+          lastName: existingData.lastName || '',
+          avatarUrl: existingData.avatarUrl || user.photoURL,
+          campus: existingData.campus || 'MSOT Ghaziabad',
+          year: existingData.year || '1st Year',
+          batch: existingData.batch || '2025-2029',
+          bio: existingData.bio || 'Cadet in AVENIR ARENA.',
+          xp: xpVal,
+          academicXP: xpVal,
+          gamesPlayed: existingData.gamesPlayed ?? 0,
+          infiniteTraceStreak: streakVal,
+          socialLinks: existingData.socialLinks || { linkedin: '', other: '' },
+          role: existingData.role || (user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'cadet'),
+          isSetupComplete: Boolean(existingData.isSetupComplete),
+          createdAt: existingData.createdAt || new Date().toISOString(),
+        };
+
+        setUserProfile(profile);
+      } else {
+        // Initialize new player document with academicXP: 0 and infiniteTraceStreak: 0
+        const isUserAdmin = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const initialData = {
+          uid: user.uid,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          email: user.email,
+          campus: 'MSOT Ghaziabad',
+          username: user.displayName || '',
+          firstName: '',
+          lastName: '',
+          avatarUrl: user.photoURL,
+          year: '1st Year',
+          batch: '2025-2029',
+          bio: 'First-year cadet in AVENIR ARENA.',
+          xp: 0,
+          academicXP: 0,
+          gamesPlayed: 0,
+          infiniteTraceStreak: 0,
+          socialLinks: { linkedin: '', other: '' },
+          role: isUserAdmin ? 'admin' : 'cadet',
+          isSetupComplete: false,
+          createdAt: new Date().toISOString(),
+        };
+
+        await setDoc(userRef, initialData, { merge: true });
+        setUserProfile(initialData as UserProfile);
+      }
+    } catch (firestoreErr) {
+      console.error('[AVENIR ARENA AUTH] Firestore upsert on login error:', firestoreErr);
+      await syncProfileFromFirestore(user.uid);
     }
   };
 
@@ -302,9 +411,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * Programmatic Google Login trigger
+   * Attempts Firebase Modular signInWithPopup first; gracefully falls back to Google GSI AuthModal
    */
   const loginWithGoogle = async (): Promise<void> => {
     setError(null);
+    try {
+      const res = await signInWithPopup(auth, googleProvider);
+      if (res && res.user) {
+        const user: User = {
+          uid: res.user.uid,
+          displayName: res.user.displayName || 'Google Cadet',
+          email: res.user.email || '',
+          photoURL:
+            res.user.photoURL ||
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        };
+        await handleAuthSuccess(user);
+        return;
+      }
+    } catch (popupErr: any) {
+      console.warn('[AVENIR ARENA AUTH] Firebase popup flow deferred or cancelled, launching modal fallback:', popupErr);
+      if (popupErr?.code === 'auth/popup-closed-by-user') {
+        setError('Login cancelled. Try again.');
+        return;
+      }
+    }
+
     openAuthModal();
   };
 
@@ -315,9 +447,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
 
     const isUserAdmin = currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const effectiveXP = typeof profileData.academicXP === 'number'
+      ? profileData.academicXP
+      : (typeof profileData.xp === 'number' ? profileData.xp : (userProfile?.academicXP ?? userProfile?.xp ?? 0));
 
-    // Persist to real-time Firestore database
-    const savedDoc = await firestoreService.setUserDoc(currentUser.uid, {
+    const userRef = doc(db, 'users', currentUser.uid);
+    const updatedPayload = {
       ...profileData,
       socialLinks: {
         linkedin: profileData.socialLinks?.linkedin || '',
@@ -325,16 +460,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       uid: currentUser.uid,
       email: currentUser.email,
+      displayName: profileData.username || currentUser.displayName,
+      photoURL: profileData.avatarUrl || currentUser.photoURL,
       role: isUserAdmin ? 'admin' : (userProfile?.role || 'cadet'),
       isSetupComplete: true,
-      xp: typeof profileData.xp === 'number' ? profileData.xp : (userProfile?.xp ?? 0),
+      xp: effectiveXP,
+      academicXP: effectiveXP,
       gamesPlayed: userProfile?.gamesPlayed ?? 0,
       infiniteTraceStreak: userProfile?.infiniteTraceStreak ?? 0,
-    });
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await setDoc(userRef, updatedPayload, { merge: true });
+    } catch (e) {
+      console.error('[AVENIR ARENA AUTH] Failed to save profile to Firestore:', e);
+    }
+
+    // Persist to offline resilient storage
+    await firestoreService.setUserDoc(currentUser.uid, updatedPayload as any);
 
     const updatedProfile: UserProfile = {
-      ...savedDoc,
-      year: savedDoc.year || '1st',
+      ...updatedPayload,
+      year: updatedPayload.year || '1st Year',
     };
 
     setUserProfile(updatedProfile);
@@ -359,15 +507,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const updateUserXP = async (delta: number): Promise<void> => {
     if (!currentUser) return;
-    const currentXP = userProfile?.xp || 0;
+    const currentXP = userProfile?.academicXP ?? userProfile?.xp ?? 0;
     const newXP = Math.max(0, currentXP + delta);
+    const newGamesPlayed = (userProfile?.gamesPlayed || 0) + 1;
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await setDoc(
+        userRef,
+        {
+          xp: newXP,
+          academicXP: newXP,
+          gamesPlayed: newGamesPlayed,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error('[AVENIR ARENA AUTH] Failed to update XP in Firestore:', e);
+    }
 
     await firestoreService.updateUserDoc(currentUser.uid, {
       xp: newXP,
-      gamesPlayed: (userProfile?.gamesPlayed || 0) + 1,
+      gamesPlayed: newGamesPlayed,
     });
 
-    setUserProfile((prev) => (prev ? { ...prev, xp: newXP, gamesPlayed: (prev.gamesPlayed || 0) + 1 } : null));
+    setUserProfile((prev) => (prev ? { ...prev, xp: newXP, academicXP: newXP, gamesPlayed: newGamesPlayed } : null));
   };
 
   /**
@@ -383,6 +548,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Log out current user and clear session from memory & storage
    */
   const logout = async (): Promise<void> => {
+    try {
+      await signOut(auth);
+    } catch {
+      // Ignore
+    }
     try {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       sessionStorage.removeItem('avenir_admin_session');
