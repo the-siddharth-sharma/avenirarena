@@ -328,9 +328,9 @@ export function LeaderboardPage() {
               aria-label="Filter by Campus"
             >
               <option value="all">All Campuses</option>
-              <option value="Mirai School Ghaziabad">Mirai School Ghaziabad</option>
-              <option value="Mirai School Bangalore">Mirai School Bangalore</option>
-              <option value="Mirai School Jaipur">Mirai School Jaipur</option>
+              <option value="MSOT Ghaziabad">MSOT Ghaziabad</option>
+              <option value="MSOT Bangalore">MSOT Bangalore</option>
+              <option value="MSOT Jaipur">MSOT Jaipur</option>
             </select>
 
             {/* League Tier Filter */}

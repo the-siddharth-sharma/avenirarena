@@ -104,12 +104,15 @@ function App() {
   return (
     <>
       <AuthModal />
-      {/* 3. Authenticated but NO profile -> Mandatory Onboarding Modal */}
-      {isOnboardingRequired && <OnboardingModal />}
-      {/* 4. Main Portal */}
-      <AppLayout currentPath={path} onNavigate={navigate}>
-        {renderPage()}
-      </AppLayout>
+      {/* 3. Authenticated but NO profile -> Mandatory Registration Terminal */}
+      {isOnboardingRequired ? (
+        <OnboardingModal />
+      ) : (
+        /* 4. Main Portal */
+        <AppLayout currentPath={path} onNavigate={navigate}>
+          {renderPage()}
+        </AppLayout>
+      )}
     </>
   );
 }

@@ -22,9 +22,9 @@ interface SearchPageProps {
 
 const CAMPUS_FILTERS = [
   { id: 'all', label: 'All Sectors' },
-  { id: 'Mirai School Ghaziabad', label: 'Mirai School Ghaziabad' },
-  { id: 'Mirai School Bangalore', label: 'Mirai School Bangalore' },
-  { id: 'Mirai School Jaipur', label: 'Mirai School Jaipur' },
+  { id: 'MSOT Ghaziabad', label: 'MSOT Ghaziabad' },
+  { id: 'MSOT Bangalore', label: 'MSOT Bangalore' },
+  { id: 'MSOT Jaipur', label: 'MSOT Jaipur' },
 ];
 
 export function SearchPage({ navigate }: SearchPageProps) {

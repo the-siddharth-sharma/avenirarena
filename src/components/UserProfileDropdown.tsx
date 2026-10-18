@@ -136,7 +136,7 @@ export function UserProfileDropdown() {
                   Standing:
                 </span>
                 <span className="text-ivory text-[10px] font-bold">
-                  {userProfile.year} Year · {userProfile.batch}
+                  {userProfile.year?.includes('Year') ? userProfile.year : `${userProfile.year} Year`} · {userProfile.batch}
                 </span>
               </div>
             </div>

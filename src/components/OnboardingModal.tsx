@@ -19,29 +19,30 @@ import { FUTURISTIC_AVATARS, type AvatarOption } from '@/data/avatars';
 
 const CAMPUS_OPTIONS = [
   {
-    id: 'Mirai School Ghaziabad',
-    name: 'Mirai School Ghaziabad',
+    id: 'MSOT Ghaziabad',
+    name: 'MSOT Ghaziabad',
     subtitle: 'Cyber & Systems Engineering Complex',
     code: 'GZB-01',
     region: 'North Sector',
   },
   {
-    id: 'Mirai School Jaipur',
-    name: 'Mirai School Jaipur',
+    id: 'MSOT Jaipur',
+    name: 'MSOT Jaipur',
     subtitle: 'AI & Quantum Robotics Research Hub',
     code: 'JPR-02',
     region: 'West Sector',
   },
   {
-    id: 'Mirai School Bangalore',
-    name: 'Mirai School Bangalore',
+    id: 'MSOT Bangalore',
+    name: 'MSOT Bangalore',
     subtitle: 'Advanced Cloud & Semiconductor Division',
     code: 'BLR-03',
     region: 'South Sector',
   },
 ];
 
-const YEAR_OPTIONS = ['1st', '2nd', '3rd', '4th'];
+const YEAR_OF_STUDY_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year'] as const;
+const BATCH_COHORT_PRESETS = ['2025-2029', '2026-2030', '2027-2031', '2028-2032'] as const;
 
 export function OnboardingModal() {
   const { currentUser, isOnboardingRequired, saveUserProfile } = useAuth();
@@ -96,9 +97,9 @@ export function OnboardingModal() {
     }
     return '';
   });
-  const [selectedCampus, setSelectedCampus] = useState<string>('Mirai School Ghaziabad');
-  const [selectedYear, setSelectedYear] = useState<string>('1st');
-  const [batch, setBatch] = useState<string>('2026-2030');
+  const [selectedCampus, setSelectedCampus] = useState<string>('MSOT Ghaziabad');
+  const [yearOfStudy, setYearOfStudy] = useState<string>('1st Year');
+  const [batchCohort, setBatchCohort] = useState<string>('2025-2029');
 
   // Username validation states
   const [isCheckingUsername, setIsCheckingUsername] = useState<boolean>(false);
@@ -107,10 +108,18 @@ export function OnboardingModal() {
   >('idle');
   const [usernameError, setUsernameError] = useState<string>('');
 
-  // Batch validation
+  // Batch Cohort validation (MSOT was established in 2025; batches prior to 2025 prohibited)
+  const batchStartYear = parseInt(batchCohort.trim().split('-')[0], 10);
+  const isBatchPriorTo2025 =
+    batchCohort.trim().length >= 4 &&
+    !isNaN(batchStartYear) &&
+    batchStartYear < 2025;
   const isBatchValid = useMemo(() => {
-    return /^\d{4}-\d{4}$/.test(batch.trim());
-  }, [batch]);
+    return /^\d{4}-\d{4}$/.test(batchCohort.trim()) && !isBatchPriorTo2025;
+  }, [batchCohort, isBatchPriorTo2025]);
+
+  const academicYearErrorMessage =
+    'MSOT was established in 2025. Please select a valid academic year from 2025 onwards.';
 
   // Initialize avatar selection
   useEffect(() => {
@@ -185,7 +194,11 @@ export function OnboardingModal() {
     !isCheckingUsername;
 
   // Step 2 validation
-  const isStep2Valid = selectedCampus && selectedYear && isBatchValid;
+  const isStep2Valid =
+    Boolean(selectedCampus) &&
+    Boolean(yearOfStudy) &&
+    isBatchValid &&
+    !isBatchPriorTo2025;
 
   const handleNextStep = () => {
     if (isStep1Valid) {
@@ -194,7 +207,7 @@ export function OnboardingModal() {
   };
 
   const handleSubmitProfile = () => {
-    if (!isStep1Valid || !isStep2Valid) return;
+    if (!isStep1Valid || !isStep2Valid || isBatchPriorTo2025) return;
 
     saveUserProfile({
       username: username.trim(),
@@ -202,8 +215,8 @@ export function OnboardingModal() {
       lastName: lastName.trim(),
       avatarUrl: selectedAvatarUrl,
       campus: selectedCampus,
-      year: selectedYear,
-      batch: batch.trim(),
+      year: yearOfStudy,
+      batch: batchCohort.trim(),
       socialLinks: {
         linkedin: linkedinUrl.trim(),
         other: otherUrl.trim(),
@@ -212,7 +225,10 @@ export function OnboardingModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-xl animate-fade-in overflow-y-auto">
+    <div
+      data-registration-terminal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-xl animate-fade-in overflow-y-auto"
+    >
       {/* Cinematic Sci-Fi Backdrop Aura */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-gold-400/10 blur-[150px] rounded-full" />
@@ -512,20 +528,20 @@ export function OnboardingModal() {
 
               {/* Year Selection & Batch Input Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Year Selection Pill Buttons */}
+                {/* Current Year of Study Selection Chips */}
                 <div>
                   <label className="block text-xs font-mono font-medium text-ivory mb-2">
-                    ACADEMIC YEAR
+                    CURRENT YEAR OF STUDY
                   </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {YEAR_OPTIONS.map((yr) => {
-                      const isSelected = selectedYear === yr;
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {YEAR_OF_STUDY_OPTIONS.map((yr) => {
+                      const isSelected = yearOfStudy === yr;
                       return (
                         <button
                           key={yr}
                           type="button"
-                          onClick={() => setSelectedYear(yr)}
-                          className={`py-2.5 rounded-xl border text-xs font-mono font-bold transition-all ${
+                          onClick={() => setYearOfStudy(yr)}
+                          className={`py-2.5 px-2 rounded-xl border text-xs font-mono font-bold transition-all text-center ${
                             isSelected
                               ? 'border-gold-400 bg-gold-400 text-obsidian shadow-[0_0_15px_rgba(208,180,119,0.4)]'
                               : 'border-line bg-elevated/50 text-muted hover:text-ivory hover:border-line-light'
@@ -538,7 +554,7 @@ export function OnboardingModal() {
                   </div>
                 </div>
 
-                {/* Batch Input */}
+                {/* Batch Cohort Input & Selection Chips */}
                 <div>
                   <label className="block text-xs font-mono font-medium text-ivory mb-2">
                     BATCH COHORT
@@ -549,24 +565,53 @@ export function OnboardingModal() {
                     </div>
                     <input
                       type="text"
-                      value={batch}
-                      onChange={(e) => setBatch(e.target.value)}
-                      placeholder="e.g. 2026-2030"
+                      value={batchCohort}
+                      onChange={(e) => setBatchCohort(e.target.value)}
+                      placeholder="e.g. 2025-2029"
                       maxLength={12}
                       className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl border bg-obsidian text-ivory text-xs font-mono placeholder:text-muted/60 transition-all focus:outline-none ${
-                        !isBatchValid && batch.length > 0
+                        (!isBatchValid && batchCohort.length > 0) || isBatchPriorTo2025
                           ? 'border-red-500/80 focus:border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
                           : 'border-line focus:border-gold-400 focus:shadow-[0_0_20px_rgba(208,180,119,0.2)]'
                       }`}
                     />
                   </div>
-                  <div className="mt-1.5 text-[10px] font-mono">
-                    {!isBatchValid && batch.length > 0 ? (
-                      <span className="text-red-400">Format required: YYYY-YYYY</span>
-                    ) : (
-                      <span className="text-muted">Expected pattern: 2026-2030</span>
-                    )}
-                  </div>
+
+                  {/* Inline Respectful Error UI if batch starts before 2025 */}
+                  {isBatchPriorTo2025 ? (
+                    <div className="mt-2 flex items-start gap-1.5 text-[11px] font-mono text-amber-400 bg-amber-400/10 border border-amber-400/30 p-2.5 rounded-xl animate-fade-in">
+                      <X className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                      <span>{academicYearErrorMessage}</span>
+                    </div>
+                  ) : (
+                    /* Preset Cohorts starting from 2025-2029 */
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span className="text-[10px] font-mono text-muted">Cohorts:</span>
+                      {BATCH_COHORT_PRESETS.map((cohort) => {
+                        const isSelected = batchCohort === cohort;
+                        return (
+                          <button
+                            key={cohort}
+                            type="button"
+                            onClick={() => setBatchCohort(cohort)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition-all ${
+                              isSelected
+                                ? 'border-gold-400 bg-gold-400 text-obsidian shadow-[0_0_8px_rgba(208,180,119,0.4)]'
+                                : 'border-line bg-elevated/50 text-muted hover:text-ivory hover:border-line-light'
+                            }`}
+                          >
+                            {cohort}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!isBatchPriorTo2025 && !isBatchValid && batchCohort.length > 0 && (
+                    <div className="mt-1.5 text-[10px] font-mono text-red-400">
+                      Format required: YYYY-YYYY
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -604,7 +649,7 @@ export function OnboardingModal() {
                   <div>
                     <p className="text-xs font-bold text-ivory font-mono">{username}</p>
                     <p className="text-[10px] text-muted font-mono">
-                      {selectedCampus} · Year {selectedYear} ({batch})
+                      {selectedCampus} • {yearOfStudy} ({batchCohort})
                     </p>
                   </div>
                 </div>
@@ -649,7 +694,7 @@ export function OnboardingModal() {
           ) : (
             <button
               type="button"
-              disabled={!isStep2Valid}
+              disabled={!isStep2Valid || isBatchPriorTo2025}
               onClick={handleSubmitProfile}
               className="px-6 py-2.5 rounded-xl border border-gold-400 bg-gold-400 hover:bg-gold-300 disabled:opacity-40 disabled:pointer-events-none text-obsidian text-xs font-bold font-mono flex items-center gap-2 transition-all shadow-[0_0_25px_rgba(208,180,119,0.4)] ml-auto active:scale-[0.98]"
             >

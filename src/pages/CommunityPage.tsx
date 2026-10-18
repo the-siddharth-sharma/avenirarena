@@ -96,7 +96,7 @@ const INITIAL_POSTS: CommunityPost[] = [
     authorName: 'Alex Chen',
     username: 'alex_chen',
     avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-    campus: 'Mirai School Ghaziabad',
+    campus: 'MSOT Ghaziabad',
     timestamp: '14 minutes ago',
     content:
       'Just cleared Floor 3 in The Code House! Make sure to watch out for the moving shadows near the library terminal. Dropping a challenge invite for anyone trying to beat my gate speed in Code Runner 3D.',
@@ -108,7 +108,7 @@ const INITIAL_POSTS: CommunityPost[] = [
     authorName: 'Rhea Kapoor',
     username: 'rhea_k',
     avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    campus: 'Mirai School Bangalore',
+    campus: 'MSOT Bangalore',
     timestamp: '1 hour ago',
     content:
       'Pro-tip for first-year B.Tech cadets taking the C++ Pointers module: remember that `*(arr + i)` is mathematically identical to `arr[i]`. Try this quiz challenge to test your pointer arithmetic under pressure!',
@@ -120,7 +120,7 @@ const INITIAL_POSTS: CommunityPost[] = [
     authorName: 'Marcus Vance',
     username: 'marcus_v',
     avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
-    campus: 'Mirai School Jaipur',
+    campus: 'MSOT Jaipur',
     timestamp: '3 hours ago',
     content:
       'Currently maintaining a 16-day Infinite Trace streak on the Left Navigation bar and Dashboard. The kinetic feedback loop is addictive. Who else is in the 10+ day club?',
@@ -162,7 +162,7 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
       name: fullName,
       username: userProfile?.username || 'operative',
       avatarUrl: userProfile?.avatarUrl || currentUser?.photoURL || '',
-      campus: userProfile?.campus || 'Mirai School Ghaziabad',
+      campus: userProfile?.campus || 'MSOT Ghaziabad',
     };
   }, [userProfile, currentUser]);
 

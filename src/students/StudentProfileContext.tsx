@@ -40,7 +40,7 @@ export const defaultCadetStudent: StudentProfile = {
   courseBranch: 'Computer Science & Engineering',
   year: 'Year 1',
   batch: 'Batch 2026',
-  campus: 'Mirai School Ghaziabad',
+  campus: 'MSOT Ghaziabad',
   joinedDate: new Date().toISOString(),
   profileCompletion: 50,
 };
@@ -210,9 +210,9 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
             streak: u.infiniteTraceStreak || 0,
             completedQuests: u.gamesPlayed || 0,
             courseBranch: 'Computer Science & Engineering',
-            year: u.year ? `${u.year} Year` : 'Year 1',
+            year: u.year ? (u.year.includes('Year') || u.year.includes('20') ? u.year : `${u.year} Year`) : 'Year 1',
             batch: u.batch || 'Batch 2026',
-            campus: u.campus || 'Mirai School Ghaziabad',
+            campus: u.campus || 'MSOT Ghaziabad',
             joinedDate: u.createdAt || new Date().toISOString(),
             profileCompletion: u.isSetupComplete ? 100 : 50,
           };
@@ -238,9 +238,9 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
             streak: userProfile?.infiniteTraceStreak ?? 0,
             completedQuests: userProfile?.gamesPlayed ?? 0,
             courseBranch: 'Computer Science & Engineering',
-            year: userProfile?.year ? `${userProfile.year} Year` : 'Year 1',
+            year: userProfile?.year ? (userProfile.year.includes('Year') || userProfile.year.includes('20') ? userProfile.year : `${userProfile.year} Year`) : 'Year 1',
             batch: userProfile?.batch || 'Batch 2026',
-            campus: userProfile?.campus || 'Mirai School Ghaziabad',
+            campus: userProfile?.campus || 'MSOT Ghaziabad',
             joinedDate: userProfile?.createdAt || new Date().toISOString(),
             profileCompletion: userProfile?.isSetupComplete ? 100 : 50,
           };

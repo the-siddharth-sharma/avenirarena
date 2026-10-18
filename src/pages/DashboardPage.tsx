@@ -23,12 +23,16 @@ import {
 import { useMemo } from 'react';
 import type { NavigateProps } from '@/pages/types';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+import { useAuth } from '@/context/AuthContext';
 import { HeroCursorTrace } from '@/components/HeroCursorTrace';
 import { InfiniteTraceWidget } from '@/components/InfiniteTraceWidget';
 import { buildCompetitiveStandings } from '@/engine/competitiveArena';
 
 export function DashboardPage({ navigate }: NavigateProps) {
   const { selectedStudent, students, xpTransactions } = useStudentProfiles();
+  const { userProfile } = useAuth();
+  const campusDisplay = userProfile?.campus || selectedStudent.campus;
+  const batchDisplay = userProfile?.batch || selectedStudent.batch;
   const dailyQuest = demoQuests.find((q) => q.frequency === 'daily' && q.status !== 'completed');
   const todayChallenge = dailyQuest || demoQuests[0];
   const recentActivities = xpTransactions.slice(0, 5);
@@ -69,7 +73,7 @@ export function DashboardPage({ navigate }: NavigateProps) {
               <p className="text-sm text-gray-400">Welcome back,</p>
               <h2 className="text-2xl font-display font-bold text-white">{selectedStudent.displayName}</h2>
               <p className="text-sm text-gray-500 mt-0.5">
-                {selectedStudent.batch} • {selectedStudent.campus}
+                {batchDisplay} • {campusDisplay}
               </p>
             </div>
           </div>
