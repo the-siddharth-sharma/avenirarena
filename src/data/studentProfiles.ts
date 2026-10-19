@@ -1,5 +1,6 @@
 import type { EditableStudentProfile, StudentProfile } from '@/types';
 import { demoStudent } from './demoData';
+import { LEADERBOARD_BADGES } from './leaderboardBadges';
 
 const profile = (student: StudentProfile): StudentProfile => student;
 
@@ -20,6 +21,9 @@ export const demoStudentProfiles: StudentProfile[] = [
     currentLevelXP: 280,
     nextLevelXP: 700,
     streak: 7,
+    streakDays: 7,
+    weeklyGrowthPct: 62,
+    badges: [LEADERBOARD_BADGES['Consistent Learning Growth']],
     completedQuests: 49,
     courseBranch: 'Software Engineering — Product Systems',
     year: 'Year 2',
@@ -40,6 +44,12 @@ export const demoStudentProfiles: StudentProfile[] = [
     currentLevelXP: 510,
     nextLevelXP: 900,
     streak: 18,
+    streakDays: 18,
+    weeklyGrowthPct: 82,
+    badges: [
+      LEADERBOARD_BADGES['Consistent Learning Growth'],
+      LEADERBOARD_BADGES['Consistent Player'],
+    ],
     completedQuests: 38,
     courseBranch: 'Artificial Intelligence — Applied ML',
     year: 'Year 1',
@@ -60,6 +70,12 @@ export const demoStudentProfiles: StudentProfile[] = [
     currentLevelXP: 650,
     nextLevelXP: 1000,
     streak: 31,
+    streakDays: 31,
+    weeklyGrowthPct: 74,
+    badges: [
+      LEADERBOARD_BADGES['Consistent Player'],
+      LEADERBOARD_BADGES['Master Learner'],
+    ],
     completedQuests: 126,
     courseBranch: 'Computer Science — Algorithms',
     year: 'Year 3',
@@ -80,6 +96,9 @@ export const demoStudentProfiles: StudentProfile[] = [
     currentLevelXP: 410,
     nextLevelXP: 900,
     streak: 14,
+    streakDays: 14,
+    weeklyGrowthPct: 56,
+    badges: [LEADERBOARD_BADGES['Consistent Learning Growth']],
     completedQuests: 94,
     courseBranch: 'Information Systems — Cloud Platforms',
     year: 'Year 2',

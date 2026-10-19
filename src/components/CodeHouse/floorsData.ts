@@ -1199,4 +1199,44 @@ export const floorsData: Record<FloorId, FloorDefinition> = {
       templateCode: `// Target Output: 100 (from test array {10, 20, 30, 40})\n#include <iostream>\n\nint calculateSum(int arr[], int size) {\n    int total = 0;\n    for (int i = 0; i < size; i++) {\n        total += arr[i];\n    }\n    return total;\n}`,
     },
   },
+  5: {
+    id: 5,
+    name: 'The Server Basement & Apex Mainframe',
+    theme: 'Glowing Server Racks, Cryo Coolant Pipes, Thermal Alarms',
+    levelBadge: 'Master Level 5 · Dynamic Programming & Mainframe Architecture',
+    storyIntro:
+      'You reach the mansion supercomputing vault. Cryogenic pipes hum under heavy load as algorithms stabilize the entire estate.',
+    mapWidth: 1200,
+    mapHeight: 900,
+    playerSpawn: { x: 600, y: 720 },
+    rooms: [
+      {
+        id: 'apex-vault',
+        name: 'The Mainframe Vault',
+        bounds: { x: 350, y: 380, width: 500, height: 450 },
+        ambientColor: 'rgba(20, 24, 38, 0.45)',
+        floorTexture: 'metal',
+      },
+    ],
+    walls: [
+      { x: 50, y: 60, width: 1100, height: 20 },
+      { x: 50, y: 840, width: 1100, height: 20 },
+      { x: 50, y: 60, width: 20, height: 800 },
+      { x: 1130, y: 60, width: 20, height: 800 },
+    ],
+    objects: [],
+    fragments: [],
+    quest: {
+      floorId: 5,
+      title: 'Mainframe Convergence',
+      subtitle: 'Complete Mansion Synchronization',
+      storyBrief: 'All 5 estate wings have been brought into harmonic balance.',
+      expectedOutput: 'Estate Operational',
+      expectedOrder: [],
+      hint1: 'Congratulations on mastering all levels!',
+      hint2: 'Revisit any room anytime.',
+      xpReward: 400,
+    },
+  },
 };
+

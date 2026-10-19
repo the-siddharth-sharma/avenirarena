@@ -54,6 +54,7 @@ interface StudentProfileContextValue {
   questCompletions: QuestCompletion[];
   submitDailyQuiz: (quizId: string, questions: QuizQuestion[], answers: number[]) => QuizSubmissionResult;
   submitGame: (gameId: LearningGameId, answer: number) => GameSubmissionResult;
+  submitCodeRunnerLevel?: (levelId: string, xp: number) => boolean;
 }
 
 const StudentProfileContext = createContext<StudentProfileContextValue | undefined>(undefined);
@@ -297,7 +298,56 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
     return { attempt, completion, awarded: gameXp > 0 };
   };
 
-  return <StudentProfileContext.Provider value={{ students, selectedStudent, selectStudent, updateSelectedStudent, quizAttempts: selectedProgress.attempts, xpTransactions: selectedProgress.transactions, gameAttempts: selectedProgress.gameAttempts, gameCompletions: selectedProgress.gameCompletions, earnedBadges: selectedProgress.earnedBadges, questCompletions: selectedProgress.questCompletions, submitDailyQuiz, submitGame }}>{children}</StudentProfileContext.Provider>;
+  const submitCodeRunnerLevel = (levelId: string, xp: number): boolean => {
+    const academicDate = getAcademicDate();
+    const alreadyAwarded = selectedProgress.transactions.some(
+      (transaction) => transaction.relatedGameId === `code-runner-${levelId}`
+    );
+    if (alreadyAwarded || xp <= 0) return false;
+
+    let next = addTransaction(
+      selectedProgress,
+      selectedStudent.id,
+      xp,
+      `Code Runner: ${levelId.toUpperCase()} completed`,
+      'game',
+      academicDate,
+      { gameId: 'code-sprint', questId: `coderunner-${levelId}` }
+    );
+    const hasSprintCompletion = next.gameCompletions.some((c) => c.gameId === 'code-sprint');
+    if (!hasSprintCompletion) {
+      const completion: GameCompletion = {
+        id: createId('game-completion'),
+        studentId: selectedStudent.id,
+        gameId: 'code-sprint',
+        completedAt: new Date().toISOString(),
+        academicDate,
+        xpAwarded: xp,
+      };
+      next = { ...next, gameCompletions: [...next.gameCompletions, completion] };
+    }
+
+    const derived = applyDerivedRewards(selectedStudent.id, next, new Date());
+    setProgress((current) => ({
+      ...current,
+      version: PROGRESS_STATE_VERSION,
+      students: { ...current.students, [selectedStudent.id]: derived.state },
+    }));
+
+    const totalAward = xp + derived.xp;
+    if (totalAward > 0) {
+      setStudents((current) =>
+        current.map((student) =>
+          student.id === selectedStudent.id
+            ? { ...student, totalXP: student.totalXP + totalAward, currentLevelXP: student.currentLevelXP + totalAward }
+            : student
+        )
+      );
+    }
+    return true;
+  };
+
+  return <StudentProfileContext.Provider value={{ students, selectedStudent, selectStudent, updateSelectedStudent, quizAttempts: selectedProgress.attempts, xpTransactions: selectedProgress.transactions, gameAttempts: selectedProgress.gameAttempts, gameCompletions: selectedProgress.gameCompletions, earnedBadges: selectedProgress.earnedBadges, questCompletions: selectedProgress.questCompletions, submitDailyQuiz, submitGame, submitCodeRunnerLevel }}>{children}</StudentProfileContext.Provider>;
 }
 
 export function useStudentProfiles(): StudentProfileContextValue {

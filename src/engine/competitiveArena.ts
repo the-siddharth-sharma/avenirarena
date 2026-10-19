@@ -225,11 +225,14 @@ const PREVIOUS_RANKS_BASE: Record<string, number> = {
   'lb-010': 9,
 };
 
+export type LeaderboardViewTab = 'overall' | 'consistent-player' | 'learning-growth';
+
 export interface StandingsFilter {
   scope: 'weekly' | 'all-time';
   batchFilter: 'all' | 'my-batch';
   campusFilter: 'all' | string;
   leagueFilter: 'all' | LeagueTier;
+  metricTab?: LeaderboardViewTab;
 }
 
 export interface ArenaEntry extends LeaderboardEntry {
@@ -286,6 +289,16 @@ export function buildCompetitiveStandings(
     const peerPref = profileMatch ? getStudentLeaguePref(profileMatch.id) : null;
     const leagueTier: LeagueTier = peerPref ? peerPref.tier : level >= 18 ? 'diamond' : level >= 15 ? 'platinum' : level >= 12 ? 'gold' : level >= 9 ? 'silver' : 'bronze';
 
+    const streakDays = isActiveCurrent
+      ? (selectedStudent.streakDays ?? selectedStudent.streak ?? peer.streakDays ?? 14)
+      : (profileMatch?.streakDays ?? profileMatch?.streak ?? peer.streakDays ?? 10);
+    const weeklyGrowthPct = isActiveCurrent
+      ? (selectedStudent.weeklyGrowthPct ?? peer.weeklyGrowthPct ?? 48)
+      : (profileMatch?.weeklyGrowthPct ?? peer.weeklyGrowthPct ?? 25);
+    const badges = isActiveCurrent
+      ? (selectedStudent.badges ?? peer.badges ?? [])
+      : (profileMatch?.badges ?? peer.badges ?? []);
+
     return {
       id: profileMatch ? profileMatch.id : peer.id,
       rank: 0, // assigned after sorting
@@ -301,6 +314,9 @@ export function buildCompetitiveStandings(
       leagueTier,
       isCurrentUser: isActiveCurrent,
       isDemo: !isActiveCurrent,
+      streakDays,
+      weeklyGrowthPct,
+      badges,
     };
   });
 
@@ -323,14 +339,31 @@ export function buildCompetitiveStandings(
     filtered = filtered.filter((e) => e.leagueTier === filters.leagueFilter);
   }
 
-  // Deterministic Ranking Sort:
-  // 1. Primary: XP score descending (weeklyXP if weekly, totalXP if all-time)
-  // 2. Secondary: Level descending
-  // 3. Tertiary: Alphabetical display name
+  // Deterministic Ranking Sort according to active view/metricTab:
+  // - Overall XP: Total/Weekly XP descending, then level, then alphabetical
+  // - Consistent Player: streakDays descending, then totalXP, then level, then alphabetical
+  // - Learning Growth: weeklyGrowthPct descending, then weeklyXP, then level, then alphabetical
+  const metricTab = filters.metricTab ?? 'overall';
+
   filtered.sort((a, b) => {
-    const scoreA = filters.scope === 'weekly' ? (a.weeklyXP ?? 0) : a.totalXP;
-    const scoreB = filters.scope === 'weekly' ? (b.weeklyXP ?? 0) : b.totalXP;
-    if (scoreB !== scoreA) return scoreB - scoreA;
+    if (metricTab === 'consistent-player') {
+      const streakA = a.streakDays ?? 0;
+      const streakB = b.streakDays ?? 0;
+      if (streakB !== streakA) return streakB - streakA;
+      if (b.totalXP !== a.totalXP) return b.totalXP - a.totalXP;
+    } else if (metricTab === 'learning-growth') {
+      const growthA = a.weeklyGrowthPct ?? 0;
+      const growthB = b.weeklyGrowthPct ?? 0;
+      if (growthB !== growthA) return growthB - growthA;
+      const scoreA = a.weeklyXP ?? 0;
+      const scoreB = b.weeklyXP ?? 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+    } else {
+      const scoreA = filters.scope === 'weekly' ? (a.weeklyXP ?? 0) : a.totalXP;
+      const scoreB = filters.scope === 'weekly' ? (b.weeklyXP ?? 0) : b.totalXP;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+    }
+
     if (b.level !== a.level) return b.level - a.level;
     return a.displayName.localeCompare(b.displayName);
   });

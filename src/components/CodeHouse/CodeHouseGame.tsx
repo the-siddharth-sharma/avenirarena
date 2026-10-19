@@ -5,7 +5,10 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Code,
+  Coins,
   Compass,
+  Cpu,
   DoorOpen,
   Flame,
   Gamepad2,
@@ -16,6 +19,7 @@ import {
   Lock,
   Play,
   RotateCcw,
+  ShoppingBag,
   Sliders,
   Sparkles,
   Terminal,
@@ -27,15 +31,32 @@ import {
   Zap,
 } from 'lucide-react';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
-import { floorsData } from './floorsData';
+import { DSA_ESTATE_FLOORS, WEBDEV_ESTATE_FLOORS } from './estateData';
+import { DsaTerminalModal } from './DsaTerminalModal';
+import { WebDevStudioModal } from './WebDevStudioModal';
+import { DecorShopModal } from './DecorShopModal';
+import { MiniGameModal } from './miniGames/MiniGameModal';
+import { NpcDialogModal } from './NpcDialogModal';
+import { SegfaultVoidModal } from './SegfaultVoidModal';
+import { NPC_CHARACTERS } from './npcDialog';
+import { DECOR_CATALOG } from './decorShop';
 import { validateCodeAssembly } from './validator';
 import { houseAudio } from './audio';
 import { CodeHouseCanvas } from './CodeHouseCanvas';
 import type {
   AssembledLine,
+  BugEntity,
   CodeFragment,
+  CodeHouseMode,
+  DecorItem,
+  FloorDefinition,
   FloorId,
+  FuseBoxState,
+  NpcCharacter,
+  PlacedDecor,
   Position,
+  RoomConnection,
+  RoomState,
   StudentCodeHouseData,
   ValidationFeedback,
   WorldObject,
@@ -45,42 +66,253 @@ interface CodeHouseGameProps {
   onExit: () => void;
 }
 
-const STORAGE_PREFIX = 'avenir_codehouse_';
+const STORAGE_PREFIX = 'avenir_codehouse_v2_';
+
+const getInitialBugsForFloor = (floorId: FloorId, mode: CodeHouseMode): BugEntity[] => {
+  if (mode === 'dsa') {
+    switch (floorId) {
+      case 1:
+        return [
+          { id: 'b1-1', x: 200, y: 320, vx: 35, vy: 25, type: 'syntax-bug', isSquashed: false, bounty: 20, size: 8, hint: 'Vector indexing starts at 0!' },
+          { id: 'b1-2', x: 920, y: 380, vx: -30, vy: 40, type: 'null-pointer', isSquashed: false, bounty: 25, size: 9, hint: 'std::sort takes iterators .begin() and .end()' },
+        ];
+      case 2:
+        return [
+          { id: 'b2-1', x: 220, y: 350, vx: 45, vy: -30, type: 'null-pointer', isSquashed: false, bounty: 30, size: 9, hint: 'Never dereference nullptr!' },
+          { id: 'b2-2', x: 950, y: 500, vx: -40, vy: 35, type: 'memory-leak', isSquashed: false, bounty: 35, size: 10, hint: 'Free dynamically allocated memory or use smart pointers.' },
+        ];
+      case 3:
+        return [
+          { id: 'b3-1', x: 300, y: 300, vx: 30, vy: 35, type: 'syntax-bug', isSquashed: false, bounty: 25, size: 8, hint: 'stack.top() inspects without popping!' },
+          { id: 'b3-2', x: 800, y: 600, vx: -35, vy: -25, type: 'memory-leak', isSquashed: false, bounty: 30, size: 9, hint: 'Always verify !stack.empty() before .pop()' },
+        ];
+      case 4:
+        return [
+          { id: 'b4-1', x: 250, y: 450, vx: 50, vy: 40, type: 'memory-leak', isSquashed: false, bounty: 35, size: 10, hint: 'Graph cycles cause infinite loops without a visited set!' },
+          { id: 'b4-2', x: 850, y: 350, vx: -45, vy: -35, type: 'null-pointer', isSquashed: false, bounty: 40, size: 9, hint: 'Check tree child before node->left->val' },
+        ];
+      case 5:
+        return [
+          { id: 'b5-1', x: 350, y: 400, vx: 40, vy: 30, type: 'memory-leak', isSquashed: false, bounty: 45, size: 11, hint: 'Unmemoized recursion causes exponential 2^n stack frames!' },
+          { id: 'b5-2', x: 750, y: 550, vx: -35, vy: -40, type: 'syntax-bug', isSquashed: false, bounty: 45, size: 10, hint: 'Base cases terminate recursion: if(n <= 1) return 1;' },
+        ];
+    }
+  } else {
+    switch (floorId) {
+      case 1:
+        return [
+          { id: 'wb1-1', x: 240, y: 320, vx: 30, vy: 30, type: 'syntax-bug', isSquashed: false, bounty: 20, size: 8, hint: 'Use semantic <article> and <section> tags.' },
+        ];
+      case 2:
+        return [
+          { id: 'wb2-1', x: 350, y: 350, vx: -35, vy: 30, type: 'null-pointer', isSquashed: false, bounty: 25, size: 9, hint: 'display: flex creates a 1D flex container.' },
+        ];
+      case 3:
+        return [
+          { id: 'wb3-1', x: 260, y: 420, vx: 40, vy: -35, type: 'memory-leak', isSquashed: false, bounty: 30, size: 9, hint: 'box-sizing: border-box includes padding in width.' },
+        ];
+      case 4:
+        return [
+          { id: 'wb4-1', x: 400, y: 380, vx: -45, vy: 40, type: 'syntax-bug', isSquashed: false, bounty: 35, size: 10, hint: '@keyframes defines animation frame progressions.' },
+        ];
+    }
+  }
+  return [];
+};
 
 const DEFAULT_STUDENT_DATA = (studentId: string): StudentCodeHouseData => ({
   studentId,
+  activeMode: 'dsa',
   unlockedFloors: [1],
   completedFloors: [],
   discoveredFragmentIds: [],
   collectedKeyIds: [],
   discoveredClueIds: [],
-  floorAttempts: { 1: 0, 2: 0, 3: 0, 4: 0 },
-  floorBestTimes: { 1: 0, 2: 0, 3: 0, 4: 0 },
+  floorAttempts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  floorBestTimes: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
   totalXP: 0,
+  byteBits: 100,
+  placedDecors: [],
+  unlockedDecorIds: [],
+  roomStates: {},
 });
 
 export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
   const { selectedStudent } = useStudentProfiles();
 
-  // Current Floor & Persistence State
+  // Mode Selection State
+  const [activeMode, setActiveMode] = useState<CodeHouseMode>('dsa');
   const [currentFloorId, setCurrentFloorId] = useState<FloorId>(1);
   const [saveData, setSaveData] = useState<StudentCodeHouseData>(() =>
     DEFAULT_STUDENT_DATA(selectedStudent.id)
   );
 
+  // Active Estate Floors based on chosen mode
+  const activeEstate = activeMode === 'dsa' ? DSA_ESTATE_FLOORS : WEBDEV_ESTATE_FLOORS;
+  const maxFloors = activeMode === 'dsa' ? 5 : 4;
+  const activeFloor = useMemo(() => activeEstate[currentFloorId] || activeEstate[1], [activeEstate, currentFloorId]);
+
+  // Enriched Floor with NPCs and Connections
+  const enrichedFloor = useMemo((): FloorDefinition => {
+    const base = activeEstate[currentFloorId] || activeEstate[1];
+    const objects = [...base.objects];
+
+    // Inject in-world NPC sprite if not present
+    if (activeMode === 'dsa') {
+      if (currentFloorId === 1 && !objects.some((o) => o.id === 'npc-obj-quacky')) {
+        objects.push({
+          id: 'npc-obj-quacky',
+          name: 'Quacky (Senior Duck)',
+          type: 'npc-duck',
+          x: 740,
+          y: 680,
+          width: 36,
+          height: 36,
+          interactRadius: 75,
+          inspectText: 'Senior Rubber Duck Debugger Quacky perches here to listen to your code.',
+          linkedNpcId: 'npc-duck',
+        });
+      } else if (
+        (currentFloorId === 2 || currentFloorId === 3 || currentFloorId === 4) &&
+        !objects.some((o) => o.id === 'npc-obj-viktor')
+      ) {
+        objects.push({
+          id: 'npc-obj-viktor',
+          name: 'Viktor (Kernel SysAdmin)',
+          type: 'npc-sysadmin',
+          x: 200,
+          y: 350,
+          width: 36,
+          height: 42,
+          interactRadius: 75,
+          inspectText: 'Viktor monitors kernel memory allocations and stack pointer registers.',
+          linkedNpcId: 'npc-sysadmin',
+        });
+      } else if (currentFloorId === 5 && !objects.some((o) => o.id === 'npc-obj-quacky')) {
+        objects.push({
+          id: 'npc-obj-quacky',
+          name: 'Quacky (Senior Duck)',
+          type: 'npc-duck',
+          x: 420,
+          y: 460,
+          width: 36,
+          height: 36,
+          interactRadius: 75,
+          inspectText: 'Quacky contemplates overlapping subproblems and memoization caches.',
+          linkedNpcId: 'npc-duck',
+        });
+      }
+    } else {
+      if (!objects.some((o) => o.id === 'npc-obj-chloe')) {
+        objects.push({
+          id: 'npc-obj-chloe',
+          name: 'Chloe (Lead Designer)',
+          type: 'npc-designer',
+          x: 240,
+          y: 440,
+          width: 36,
+          height: 42,
+          interactRadius: 75,
+          inspectText: 'Chloe checks layout alignments and CSS design fidelity.',
+          linkedNpcId: 'npc-designer',
+        });
+      }
+    }
+
+    // Connections with memory pointers (DSA Mode)
+    let connections = base.connections;
+    if (!connections && activeMode === 'dsa') {
+      if (currentFloorId === 2) {
+        connections = [
+          {
+            id: 'conn-floor-2-to-3',
+            fromRoomId: 'stair-west-wing',
+            toRoomId: 'kitchen-stacks',
+            x: 180,
+            y: 120,
+            width: 70,
+            height: 35,
+            label: 'Ascension to Stacks & Queues',
+            targetFloorId: 3,
+            targetPlayerSpawn: { x: 600, y: 720 },
+            pointerAddress: '0x00A0',
+          },
+          {
+            id: 'conn-floor-2-trap',
+            fromRoomId: 'stair-east-wing',
+            toRoomId: 'segfault-void',
+            x: 950,
+            y: 120,
+            width: 70,
+            height: 35,
+            label: 'Unmapped Memory Portal',
+            targetFloorId: 2,
+            targetPlayerSpawn: { x: 600, y: 760 },
+            pointerAddress: '0x0000',
+            isSegfaultTrap: true,
+          },
+        ];
+      } else {
+        const nextFloor = Math.min(5, currentFloorId + 1) as FloorId;
+        connections = [
+          {
+            id: `conn-floor-${currentFloorId}-portal`,
+            fromRoomId: base.rooms[0]?.id || 'main',
+            toRoomId: `room-${nextFloor}`,
+            x: 565,
+            y: 60,
+            width: 70,
+            height: 35,
+            label: `Portal to Room ${nextFloor}`,
+            targetFloorId: nextFloor,
+            targetPlayerSpawn: { x: 600, y: 720 },
+            pointerAddress: `0x${(currentFloorId * 0x1000).toString(16).toUpperCase()}`,
+          },
+        ];
+      }
+    }
+
+    return {
+      ...base,
+      objects,
+      connections,
+    };
+  }, [activeEstate, currentFloorId, activeMode]);
+
   // Gameplay State
   const [gameState, setGameState] = useState<
-    'intro' | 'exploring' | 'inspect' | 'journal' | 'floormap' | 'success' | 'failed'
-  >('intro');
+    'mode-select' | 'intro' | 'exploring' | 'inspect' | 'journal' | 'floormap' | 'success' | 'failed'
+  >('mode-select');
   const [hearts, setHearts] = useState<number>(3);
   const [assembledLines, setAssembledLines] = useState<AssembledLine[]>([]);
   const [validationResult, setValidationResult] = useState<ValidationFeedback | null>(null);
   const [isValidating, setIsValidating] = useState<boolean>(false);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
 
-  // Inspector Modal State
+  // Inspector & Interactive Challenge Modals
   const [inspectedObject, setInspectedObject] = useState<WorldObject | null>(null);
   const [nearbyObject, setNearbyObject] = useState<WorldObject | null>(null);
+  const [activeDsaChallengeModal, setActiveDsaChallengeModal] = useState<boolean>(false);
+  const [activeWebDevStudioModal, setActiveWebDevStudioModal] = useState<boolean>(false);
+  const [activeCheatSheetModal, setActiveCheatSheetModal] = useState<WorldObject['hintData'] | null>(null);
+
+  // New Modals for Game Systems
+  const [isDecorShopOpen, setIsDecorShopOpen] = useState<boolean>(false);
+  const [isMiniGameOpen, setIsMiniGameOpen] = useState<boolean>(false);
+  const [activeNpcCharacter, setActiveNpcCharacter] = useState<NpcCharacter | null>(null);
+  const [segfaultTrapAddress, setSegfaultTrapAddress] = useState<string | null>(null);
+
+  // Audiovisual Screen Juice
+  const [shakeScreen, setShakeScreen] = useState<boolean>(false);
+  const [confettiActive, setConfettiActive] = useState<boolean>(false);
+
+  // Roaming Bugs State
+  const [activeBugs, setActiveBugs] = useState<BugEntity[]>(() =>
+    getInitialBugsForFloor(1, 'dsa')
+  );
+
+  // Timed Fuse Box State
+  const [fuseBoxState, setFuseBoxState] = useState<FuseBoxState | undefined>(undefined);
 
   // Mobile / UI Drawers
   const [mobilePanelOpen, setMobilePanelOpen] = useState<boolean>(false);
@@ -88,7 +320,6 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
   const [audioSettings, setAudioSettings] = useState(houseAudio.settings);
 
   // Movement & Avatar state
-  const activeFloor = useMemo(() => floorsData[currentFloorId], [currentFloorId]);
   const [playerPos, setPlayerPos] = useState<Position>(activeFloor.playerSpawn);
   const [playerFacing, setPlayerFacing] = useState<'up' | 'down' | 'left' | 'right'>('down');
   const [isMoving, setIsMoving] = useState<boolean>(false);
@@ -96,24 +327,27 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
 
   // Load saved student data on mount or when student changes
   useEffect(() => {
-    const key = `${STORAGE_PREFIX}${selectedStudent.id}`;
+    const key = `${STORAGE_PREFIX}${selectedStudent.id}_${activeMode}`;
     try {
       const stored = localStorage.getItem(key);
       if (stored) {
         const parsed: StudentCodeHouseData = JSON.parse(stored);
         setSaveData(parsed);
-        // Set current floor to highest unlocked
-        const maxUnlocked = Math.max(...(parsed.unlockedFloors || [1])) as FloorId;
+        const maxUnlocked = Math.min(
+          maxFloors,
+          Math.max(...(parsed.unlockedFloors || [1]))
+        ) as FloorId;
         setCurrentFloorId(maxUnlocked);
       } else {
         const initial = DEFAULT_STUDENT_DATA(selectedStudent.id);
+        initial.activeMode = activeMode;
         setSaveData(initial);
         setCurrentFloorId(1);
       }
     } catch {
       setSaveData(DEFAULT_STUDENT_DATA(selectedStudent.id));
     }
-  }, [selectedStudent.id]);
+  }, [selectedStudent.id, activeMode, maxFloors]);
 
   // Save student data to localStorage
   const persistSaveData = useCallback(
@@ -121,14 +355,17 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
       setSaveData((prev) => {
         const next = updater(prev);
         try {
-          localStorage.setItem(`${STORAGE_PREFIX}${selectedStudent.id}`, JSON.stringify(next));
+          localStorage.setItem(
+            `${STORAGE_PREFIX}${selectedStudent.id}_${activeMode}`,
+            JSON.stringify(next)
+          );
         } catch {
           // Ignore
         }
         return next;
       });
     },
-    [selectedStudent.id]
+    [selectedStudent.id, activeMode]
   );
 
   // Ambient sound management
@@ -168,15 +405,14 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
           closeInspectModal();
         }
       } else if (e.code === 'KeyJ') {
-        // Toggle Journal
         setGameState((curr) => (curr === 'journal' ? 'exploring' : 'journal'));
       } else if (e.code === 'KeyM') {
-        // Toggle Floor Map
         setGameState((curr) => (curr === 'floormap' ? 'exploring' : 'floormap'));
       } else if (e.code === 'Escape') {
         if (gameState === 'inspect' || gameState === 'journal' || gameState === 'floormap') {
           setGameState('exploring');
           setInspectedObject(null);
+          setActiveCheatSheetModal(null);
         }
       }
     };
@@ -193,10 +429,37 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
     };
   }, [gameState, nearbyObject]);
 
+  // Fuse box countdown ticker
+  useEffect(() => {
+    if (!fuseBoxState?.active || fuseBoxState.isTripped || gameState !== 'exploring') return;
+
+    const interval = setInterval(() => {
+      setFuseBoxState((curr) => {
+        if (!curr || !curr.active || curr.isTripped) return curr;
+        const nextTime = curr.timeRemaining - 1;
+
+        if (nextTime <= 10 && nextTime > 0) {
+          houseAudio.playTerminalBeep();
+        }
+
+        if (nextTime <= 0) {
+          houseAudio.playEmergencySiren();
+          setShakeScreen(true);
+          setTimeout(() => setShakeScreen(false), 800);
+          return { ...curr, timeRemaining: 0, isTripped: true };
+        }
+
+        return { ...curr, timeRemaining: nextTime };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [fuseBoxState?.active, fuseBoxState?.isTripped, gameState]);
+
   // Change Floor
   const changeFloor = (newFloorId: FloorId) => {
     setCurrentFloorId(newFloorId);
-    const newFloor = floorsData[newFloorId];
+    const newFloor = activeEstate[newFloorId] || activeEstate[1];
     setPlayerPos(newFloor.playerSpawn);
     setPlayerFacing('down');
     setIsMoving(false);
@@ -207,22 +470,74 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
     setGameState('exploring');
     setInspectedObject(null);
     setNearbyObject(null);
+    setActiveDsaChallengeModal(false);
+    setActiveWebDevStudioModal(false);
+    setActiveCheatSheetModal(null);
+    setActiveNpcCharacter(null);
+    setSegfaultTrapAddress(null);
+    setActiveBugs(getInitialBugsForFloor(newFloorId, activeMode));
+    if ((newFloorId === 5 && activeMode === 'dsa') || (newFloorId === 4 && activeMode === 'webdev')) {
+      setFuseBoxState({ active: true, timeRemaining: 60, maxTime: 60, isTripped: false });
+    } else {
+      setFuseBoxState(undefined);
+    }
     houseAudio.playDoorUnlock();
   };
 
-  // Start Playing from Intro
+  // Start Exploring from Intro
   const startExploring = () => {
     houseAudio.playTerminalBeep();
     setGameState('exploring');
+  };
+
+  // Switch Gameplay Mode
+  const handleSelectMode = (mode: CodeHouseMode) => {
+    houseAudio.playTerminalBeep();
+    setActiveMode(mode);
+    setCurrentFloorId(1);
+    setGameState('intro');
+    const targetEstate = mode === 'dsa' ? DSA_ESTATE_FLOORS : WEBDEV_ESTATE_FLOORS;
+    setPlayerPos(targetEstate[1].playerSpawn);
+    setElapsedSeconds(0);
+    setActiveBugs(getInitialBugsForFloor(1, mode));
+    setFuseBoxState(undefined);
   };
 
   // Interact with World Object
   const handleInteract = (obj: WorldObject) => {
     houseAudio.playInspect();
     setInspectedObject(obj);
+
+    // If interacting with an NPC
+    if (obj.type === 'npc-duck' || obj.type === 'npc-sysadmin' || obj.type === 'npc-designer' || obj.linkedNpcId) {
+      const npcKey = obj.linkedNpcId || obj.type;
+      const char = NPC_CHARACTERS[npcKey] || NPC_CHARACTERS['npc-duck'];
+      setActiveNpcCharacter(char);
+      return;
+    }
+
+    // If object links to a mode-specific challenge terminal
+    if (obj.linkedChallengeId) {
+      if (activeMode === 'dsa' && activeFloor.dsaChallenge) {
+        setActiveDsaChallengeModal(true);
+        return;
+      }
+      if (activeMode === 'webdev' && activeFloor.webDevChallenge) {
+        setActiveWebDevStudioModal(true);
+        return;
+      }
+    }
+
+    // If object contains syntax cheatsheet notes (e.g. bookshelves)
+    if (obj.hintData) {
+      setActiveCheatSheetModal(obj.hintData);
+      return;
+    }
+
+    // Default inspection modal
     setGameState('inspect');
 
-    // If object gives a key and not collected yet
+    // Collect keys
     if (obj.givesKeyId && !saveData.collectedKeyIds.includes(obj.givesKeyId)) {
       houseAudio.playKeyPickup();
       persistSaveData((prev) => ({
@@ -231,7 +546,7 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
       }));
     }
 
-    // If object gives a fragment and not discovered yet
+    // Collect code fragments
     if (obj.givesFragmentId && !saveData.discoveredFragmentIds.includes(obj.givesFragmentId)) {
       houseAudio.playFragmentPickup();
       persistSaveData((prev) => ({
@@ -240,7 +555,7 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
       }));
     }
 
-    // If object gives a clue note
+    // Collect clues
     if (obj.clueText && !saveData.discoveredClueIds.includes(obj.id)) {
       persistSaveData((prev) => ({
         ...prev,
@@ -252,10 +567,148 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
   // Close Inspection Modal
   const closeInspectModal = () => {
     setInspectedObject(null);
+    setActiveCheatSheetModal(null);
     setGameState('exploring');
   };
 
-  // Insert Fragment into Assembled Lines
+  // Solved Handler for DSA Mode Challenge
+  const handleDsaSolved = (code: string) => {
+    setActiveDsaChallengeModal(false);
+    houseAudio.playValidationSuccess();
+    handleRoomSuccess(code);
+  };
+
+  // Solved Handler for Web Dev Mode Challenge
+  const handleWebDevSolved = (html: string, css: string) => {
+    setActiveWebDevStudioModal(false);
+    houseAudio.playValidationSuccess();
+    handleRoomSuccess(`HTML:\n${html}\n\nCSS:\n${css}`);
+  };
+
+  // Shared Room Success Trigger
+  const handleRoomSuccess = (solutionPayload: string) => {
+    setGameState('success');
+    setConfettiActive(true);
+    setTimeout(() => setConfettiActive(false), 3500);
+
+    const xpReward = activeFloor.quest.xpReward;
+    const nextFloor = (currentFloorId + 1) as FloorId;
+
+    persistSaveData((prev) => {
+      const unlocked = new Set(prev.unlockedFloors);
+      if (nextFloor <= maxFloors) unlocked.add(nextFloor);
+
+      const completed = new Set(prev.completedFloors);
+      completed.add(currentFloorId);
+
+      const updatedRoomStates = {
+        ...prev.roomStates,
+        [currentFloorId]: {
+          isSolved: true,
+          isPowered: true,
+          unlockedGates: ['main-gate'],
+          renovationStage: 'restored' as const,
+          submittedHtml: activeMode === 'webdev' ? solutionPayload : undefined,
+        },
+      };
+
+      return {
+        ...prev,
+        unlockedFloors: Array.from(unlocked) as FloorId[],
+        completedFloors: Array.from(completed) as FloorId[],
+        totalXP: prev.totalXP + xpReward,
+        byteBits: (prev.byteBits || 0) + 50,
+        roomStates: updatedRoomStates,
+        floorBestTimes: {
+          ...prev.floorBestTimes,
+          [currentFloorId]:
+            prev.floorBestTimes[currentFloorId] === 0
+              ? elapsedSeconds
+              : Math.min(prev.floorBestTimes[currentFloorId], elapsedSeconds),
+        },
+      };
+    });
+  };
+
+  // Roaming Bugs Squash Handler
+  const handleSquashBug = (bug: BugEntity) => {
+    setActiveBugs((prev) =>
+      prev.map((b) => (b.id === bug.id ? { ...b, isSquashed: true } : b))
+    );
+    persistSaveData((prev) => ({
+      ...prev,
+      byteBits: (prev.byteBits || 0) + bug.bounty,
+    }));
+  };
+
+  // Decor System Handlers
+  const handlePurchaseDecor = (item: DecorItem) => {
+    persistSaveData((prev) => {
+      const currentBits = prev.byteBits || 0;
+      if (currentBits < item.cost) return prev;
+      return {
+        ...prev,
+        byteBits: currentBits - item.cost,
+        unlockedDecorIds: [...(prev.unlockedDecorIds || []), item.id],
+      };
+    });
+  };
+
+  const handlePlaceDecor = (decorId: string, pos: Position) => {
+    const newPlaced: PlacedDecor = {
+      instanceId: `decor-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      decorId,
+      x: pos.x,
+      y: pos.y,
+      floorId: currentFloorId,
+    };
+    persistSaveData((prev) => ({
+      ...prev,
+      placedDecors: [...(prev.placedDecors || []), newPlaced],
+    }));
+  };
+
+  const handleRemovePlacedDecor = (instanceId: string) => {
+    persistSaveData((prev) => ({
+      ...prev,
+      placedDecors: (prev.placedDecors || []).filter((d) => d.instanceId !== instanceId),
+    }));
+  };
+
+  // Mini-Game Arcade Reward
+  const handleMiniGameReward = (bits: number, xp: number) => {
+    persistSaveData((prev) => ({
+      ...prev,
+      byteBits: (prev.byteBits || 0) + bits,
+      totalXP: prev.totalXP + xp,
+    }));
+    setConfettiActive(true);
+    setTimeout(() => setConfettiActive(false), 3000);
+  };
+
+  // Segfault Trap & Room Portal Handlers
+  const handleSegfaultTrap = (pointerAddress?: string) => {
+    houseAudio.playValidationError();
+    setShakeScreen(true);
+    setTimeout(() => setShakeScreen(false), 600);
+    setSegfaultTrapAddress(pointerAddress || '0x00000000');
+  };
+
+  const handleRespawnFromSegfault = () => {
+    setSegfaultTrapAddress(null);
+    setPlayerPos(activeFloor.playerSpawn);
+    setPlayerFacing('down');
+    setIsMoving(false);
+  };
+
+  const handleRoomConnection = (conn: RoomConnection) => {
+    changeFloor(conn.targetFloorId);
+    if (conn.targetPlayerSpawn) {
+      setPlayerPos(conn.targetPlayerSpawn);
+    }
+  };
+
+  // Insert Fragment into Assembled Lines (for traditional C++ assembly mode)
   const handleInsertFragment = (fragment: CodeFragment) => {
     houseAudio.playLineClick();
     const newLine: AssembledLine = {
@@ -290,13 +743,6 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
     setValidationResult(null);
   };
 
-  // Clear all assembled lines
-  const handleClearLines = () => {
-    houseAudio.playLineClick();
-    setAssembledLines([]);
-    setValidationResult(null);
-  };
-
   // Run and Validate Assembled Solution
   const handleValidateSolution = () => {
     houseAudio.playTerminalBeep();
@@ -308,39 +754,12 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
       setValidationResult(result);
 
       if (result.isValid) {
-        // Triumphant Success!
-        houseAudio.playValidationSuccess();
-        setGameState('success');
-
-        // Persist completion and unlock next floor
-        const nextFloor = (currentFloorId + 1) as FloorId;
-        persistSaveData((prev) => {
-          const unlocked = new Set(prev.unlockedFloors);
-          if (nextFloor <= 4) unlocked.add(nextFloor);
-
-          const completed = new Set(prev.completedFloors);
-          const isFirstTime = !completed.has(currentFloorId);
-          completed.add(currentFloorId);
-
-          const xpGain = isFirstTime ? activeFloor.quest.xpReward : 0;
-
-          return {
-            ...prev,
-            unlockedFloors: Array.from(unlocked) as FloorId[],
-            completedFloors: Array.from(completed) as FloorId[],
-            totalXP: prev.totalXP + xpGain,
-            floorBestTimes: {
-              ...prev.floorBestTimes,
-              [currentFloorId]:
-                prev.floorBestTimes[currentFloorId] === 0
-                  ? elapsedSeconds
-                  : Math.min(prev.floorBestTimes[currentFloorId], elapsedSeconds),
-            },
-          };
-        });
+        handleRoomSuccess(assembledLines.map((l) => l.code).join('\n'));
       } else {
-        // Error occurred
         houseAudio.playValidationError();
+        setShakeScreen(true);
+        setTimeout(() => setShakeScreen(false), 500);
+
         if (result.isHeartLost) {
           setHearts((h) => {
             const nextH = h - 1;
@@ -383,9 +802,12 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
     );
   }, [activeFloor.fragments, saveData.discoveredFragmentIds]);
 
+  // Is Current Room Solved
+  const isCurrentRoomSolved = saveData.roomStates?.[currentFloorId]?.isSolved || false;
+
   return (
     <div className="relative flex flex-col w-full min-h-[720px] bg-obsidian text-ivory rounded-2xl border border-line overflow-hidden shadow-2xl">
-      {/* Top Atmospheric Header Bar */}
+      {/* ─── Top Atmospheric Header Bar ───────────────────────────────── */}
       <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-line bg-graphite/90 backdrop-blur-md z-30">
         <div className="flex items-center gap-3">
           <button
@@ -407,18 +829,44 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               <span className="font-display font-bold text-sm sm:text-base text-gold-400">
                 THE CODE HOUSE
               </span>
+              <span
+                className={`badge text-[10px] font-semibold uppercase tracking-wider ${
+                  activeMode === 'dsa'
+                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                    : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'
+                }`}
+              >
+                {activeMode === 'dsa' ? 'DSA Mode (C++)' : 'Web Dev (HTML & CSS)'}
+              </span>
               <span className="badge bg-gold-400/10 text-gold-400 text-[10px] border border-gold-400/30">
-                Floor {currentFloorId}: {activeFloor.name}
+                Room {currentFloorId}: {activeFloor.name.split('(')[0].trim()}
               </span>
             </div>
             <p className="text-[11px] text-muted hidden md:block">
-              {activeFloor.levelBadge} · {activeFloor.quest.subtitle}
+              {activeFloor.levelBadge}
             </p>
           </div>
         </div>
 
         {/* Center / Right Header Telemetry */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Mode Switcher Button */}
+          <button
+            onClick={() => {
+              houseAudio.playLineClick();
+              setGameState('mode-select');
+            }}
+            className="btn btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1.5"
+            title="Switch Mode (DSA vs Web Dev)"
+          >
+            {activeMode === 'dsa' ? (
+              <Terminal className="h-3.5 w-3.5 text-amber-400" />
+            ) : (
+              <Code className="h-3.5 w-3.5 text-cyan-400" />
+            )}
+            <span className="hidden sm:inline">Switch Mode</span>
+          </button>
+
           {/* Hearts Meter */}
           <div className="flex items-center gap-1 px-2.5 py-1 rounded border border-line bg-elevated">
             {[1, 2, 3].map((hIndex) => (
@@ -440,26 +888,42 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               setGameState((s) => (s === 'floormap' ? 'exploring' : 'floormap'));
             }}
             className="btn btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1.5"
-            title="View Mansion Map [M]"
+            title="View Estate Map [M]"
           >
             <Layers className="h-3.5 w-3.5 text-gold-400" />
-            <span className="hidden sm:inline">Floors</span>
+            <span className="hidden sm:inline">Rooms</span>
           </button>
 
-          {/* Journal Button */}
+          {/* Byte Bits Counter */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-yellow-400/30 bg-yellow-400/10 text-yellow-400 font-mono text-xs">
+            <Coins className="h-3.5 w-3.5" />
+            <span>{saveData.byteBits ?? 0}</span>
+          </div>
+
+          {/* Decor Shop */}
           <button
             onClick={() => {
               houseAudio.playLineClick();
-              setGameState((s) => (s === 'journal' ? 'exploring' : 'journal'));
+              setIsDecorShopOpen(true);
             }}
             className="btn btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1.5"
-            title="Inspect Clue Journal [J]"
+            title="Decor Shop"
           >
-            <BookOpen className="h-3.5 w-3.5 text-gold-400" />
-            <span className="hidden sm:inline">Journal</span>
-            {saveData.discoveredClueIds.length > 0 && (
-              <span className="h-1.5 w-1.5 rounded-full bg-gold-400" />
-            )}
+            <ShoppingBag className="h-3.5 w-3.5 text-purple-400" />
+            <span className="hidden sm:inline">Shop</span>
+          </button>
+
+          {/* Arcade */}
+          <button
+            onClick={() => {
+              houseAudio.playLineClick();
+              setIsMiniGameOpen(true);
+            }}
+            className="btn btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1.5"
+            title="Arcade Mini-Games"
+          >
+            <Gamepad2 className="h-3.5 w-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Arcade</span>
           </button>
 
           {/* Audio Controls */}
@@ -477,42 +941,149 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               <Volume2 className="h-4 w-4 text-gold-400" />
             )}
           </button>
-
-          {/* Mobile Panel Toggle */}
-          <button
-            onClick={() => setMobilePanelOpen((o) => !o)}
-            className="lg:hidden btn btn-primary text-xs py-1.5 px-2.5 flex items-center gap-1"
-          >
-            <Terminal className="h-3.5 w-3.5" />
-            <span>Code</span>
-          </button>
         </div>
       </header>
 
-      {/* Main Dual-Pane Game Viewport */}
+      {/* ─── Mode Switcher / Start Screen Modal ──────────────────────── */}
+      {gameState === 'mode-select' && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-obsidian/95 backdrop-blur-md animate-fade-in">
+          <div className="max-w-3xl w-full rounded-2xl border border-line bg-graphite p-6 sm:p-8 shadow-2xl text-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gold-400/30 bg-gold-400/10 text-gold-400 text-xs font-semibold mb-4">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Select Estate Exploration Mode</span>
+            </div>
+
+            <h2 className="text-2xl sm:text-3xl font-display font-bold text-ivory tracking-tight">
+              WELCOME TO THE CODE HOUSE
+            </h2>
+            <p className="text-xs sm:text-sm text-muted max-w-xl mx-auto mt-2 leading-relaxed">
+              Step across the threshold of a multi-level educational estate. Choose your discipline to
+              explore themed rooms where layout, appliances, and architecture reflect computer science concepts.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8 text-left">
+              {/* Card 1: DSA Mode (C++) */}
+              <div
+                onClick={() => handleSelectMode('dsa')}
+                className={`p-5 rounded-xl border transition-all cursor-pointer relative group ${
+                  activeMode === 'dsa'
+                    ? 'border-amber-500/60 bg-amber-500/10 shadow-[0_0_25px_rgba(245,158,11,0.2)]'
+                    : 'border-line bg-elevated hover:border-amber-500/40 hover:bg-elevated/80'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <Terminal className="h-6 w-6" />
+                  </div>
+                  <span className="badge text-[10px] font-mono font-bold text-amber-400 bg-amber-500/20">
+                    5 Rooms · C++
+                  </span>
+                </div>
+
+                <h3 className="font-display font-bold text-lg text-ivory group-hover:text-amber-400 transition-colors">
+                  Mode 1: Algorithmic Facility (DSA)
+                </h3>
+                <p className="text-xs text-muted mt-1.5 leading-relaxed">
+                  Theme the house like an algorithmic data facility. Calibrate array vectors in the living room,
+                  traverse pointer addresses along the grand staircase, balance LIFO/FIFO stacks in the kitchen,
+                  navigate hedge maze graphs with BFS, and cool the overheating server basement with dynamic programming.
+                </p>
+
+                <div className="mt-4 pt-3 border-t border-line flex items-center justify-between text-[11px] text-amber-400 font-semibold">
+                  <span>Launch DSA Mode</span>
+                  <span className="group-hover:translate-x-1 transition-transform">➔</span>
+                </div>
+              </div>
+
+              {/* Card 2: Web Dev Mode (HTML & CSS) */}
+              <div
+                onClick={() => handleSelectMode('webdev')}
+                className={`p-5 rounded-xl border transition-all cursor-pointer relative group ${
+                  activeMode === 'webdev'
+                    ? 'border-cyan-500/60 bg-cyan-500/10 shadow-[0_0_25px_rgba(6,182,212,0.2)]'
+                    : 'border-line bg-elevated hover:border-cyan-500/40 hover:bg-elevated/80'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                    <Code className="h-6 w-6" />
+                  </div>
+                  <span className="badge text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/20">
+                    4 Rooms · HTML & CSS
+                  </span>
+                </div>
+
+                <h3 className="font-display font-bold text-lg text-ivory group-hover:text-cyan-400 transition-colors">
+                  Mode 2: The Unstyled Webpage (Web Dev)
+                </h3>
+                <p className="text-xs text-muted mt-1.5 leading-relaxed">
+                  Theme the house like a broken, unrendered website. Turn cardboard wireframe boxes into load-bearing
+                  semantic architecture in the foyer, snap floating furniture into place with CSS Flexbox & Grid,
+                  prevent collisions in the bedroom using the CSS Box Model, and animate the kinetic courtyard fountain with @keyframes.
+                </p>
+
+                <div className="mt-4 pt-3 border-t border-line flex items-center justify-between text-[11px] text-cyan-400 font-semibold">
+                  <span>Launch Web Dev Mode</span>
+                  <span className="group-hover:translate-x-1 transition-transform">➔</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Intro Screen Modal ────────────────────────────────────────── */}
+      {gameState === 'intro' && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-obsidian/95 backdrop-blur-md animate-fade-in text-center">
+          <div className="max-w-xl w-full rounded-2xl border border-line bg-graphite p-6 sm:p-8 shadow-2xl">
+            <span className="badge bg-gold-400/10 text-gold-400 text-xs font-semibold mb-3">
+              Room {currentFloorId} of {maxFloors}
+            </span>
+
+            <h3 className="font-display text-2xl font-bold text-ivory tracking-tight">
+              {activeFloor.name}
+            </h3>
+            <p className="text-xs font-mono text-gold-400 mt-1">{activeFloor.theme}</p>
+
+            <p className="text-xs sm:text-sm text-muted mt-4 leading-relaxed text-left bg-elevated/50 p-4 rounded-xl border border-line">
+              {activeFloor.storyIntro}
+            </p>
+
+            <div className="flex items-center justify-center gap-3 mt-6">
+              <button
+                onClick={startExploring}
+                className="btn btn-primary px-8 py-3 text-sm font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(208,180,119,0.3)]"
+              >
+                <Play className="h-4 w-4 fill-current" />
+                <span>Enter & Explore Room</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Main Dual-Pane Game Viewport ─────────────────────────────── */}
       <div className="relative flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left Pane: 2D Canvas Mansion Exploration */}
         <div className="relative flex-1 flex flex-col p-4 bg-obsidian">
-          {/* Floor Subtitle and Quick Status */}
+          {/* Controls Subtitle & HUD */}
           <div className="flex items-center justify-between mb-2 text-xs text-muted font-mono">
             <div className="flex items-center gap-2">
               <Compass className="h-3.5 w-3.5 text-gold-400" />
-              <span>Use WASD or Arrows to explore rooms · Walk near objects to inspect</span>
+              <span>Use WASD or Arrows to explore · Walk near terminals to inspect [E]</span>
             </div>
             <div className="hidden sm:flex items-center gap-3">
-              <span>Keys: {saveData.collectedKeyIds.length}</span>
-              <span>·</span>
-              <span>
-                Fragments: {discoveredFloorFragments.length} / {activeFloor.fragments.length}
-              </span>
-              <span>·</span>
               <span>Time: {elapsedSeconds}s</span>
+              <span>·</span>
+              <span className={isCurrentRoomSolved ? 'text-emerald-400' : 'text-amber-400'}>
+                {isCurrentRoomSolved ? '✓ Room Calibrated' : '⚡ Puzzle Active'}
+              </span>
             </div>
           </div>
 
           {/* Interactive Top-Down Canvas */}
           <CodeHouseCanvas
-            floor={activeFloor}
+            floor={enrichedFloor}
             playerPos={playerPos}
             playerFacing={playerFacing}
             isMoving={isMoving}
@@ -527,11 +1098,19 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               setIsMoving(moving);
             }}
             activeKeys={activeKeysRef.current}
+            roomStates={saveData.roomStates}
+            bugs={activeBugs}
+            onSquashBug={handleSquashBug}
+            fuseBoxState={fuseBoxState}
+            placedDecors={saveData.placedDecors || []}
+            shakeScreen={shakeScreen}
+            confettiActive={confettiActive}
+            onRoomConnection={handleRoomConnection}
+            onSegfaultTrap={handleSegfaultTrap}
           />
 
-          {/* Mobile On-Screen Virtual Controls */}
+          {/* Mobile Virtual Controls */}
           <div className="lg:hidden flex items-center justify-between mt-3 px-2">
-            {/* Virtual Directional D-Pad */}
             <div className="grid grid-cols-3 gap-1 w-28">
               <div />
               <button
@@ -561,7 +1140,6 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               </button>
             </div>
 
-            {/* Contextual Action Button */}
             <button
               onClick={() => {
                 if (nearbyObject) handleInteract(nearbyObject);
@@ -575,256 +1153,182 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
           </div>
         </div>
 
-        {/* Right Pane: Persistent Quest Terminal & Code Assembly Panel */}
-        <div
-          className={`
-            lg:w-[460px] xl:w-[500px] border-t lg:border-t-0 lg:border-l border-line bg-graphite flex flex-col z-20 transition-all duration-300
-            ${mobilePanelOpen ? 'fixed inset-x-0 bottom-0 top-16 z-40' : 'hidden lg:flex'}
-          `}
-        >
-          {/* Panel Header */}
+        {/* Right Pane: Room Objective & Challenge Hub */}
+        <div className="lg:w-[420px] xl:w-[460px] border-t lg:border-t-0 lg:border-l border-line bg-graphite flex flex-col z-20">
+          {/* Header */}
           <div className="p-4 border-b border-line bg-elevated flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Terminal className="h-4 w-4 text-gold-400" />
               <h3 className="font-display font-semibold text-sm text-ivory">
-                Quest Terminal & Code Assembly
+                Room Mission Telemetry
               </h3>
             </div>
-            {mobilePanelOpen && (
-              <button
-                onClick={() => setMobilePanelOpen(false)}
-                className="p-1 rounded text-muted hover:text-ivory lg:hidden"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-mono">
-            {/* Quest Briefing Card */}
-            <div className="rounded-lg border border-gold-400/30 bg-gold-400/5 p-3.5 space-y-2">
-              <div className="flex items-center justify-between text-gold-400 font-semibold">
-                <span>{activeFloor.quest.title}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gold-400/20 border border-gold-400/40">
-                  +{activeFloor.quest.xpReward} XP
-                </span>
-              </div>
-              <p className="text-muted leading-relaxed font-sans">{activeFloor.quest.storyBrief}</p>
-              <div className="pt-2 border-t border-gold-400/20 flex items-center justify-between text-[11px]">
-                <span className="text-muted">Target Output:</span>
-                <span className="text-gold-400 font-bold bg-graphite px-2 py-0.5 rounded border border-line">
-                  {activeFloor.quest.expectedOutput}
-                </span>
-              </div>
-            </div>
-
-            {/* Discovered Fragments Pouch */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-ivory uppercase tracking-wider text-[11px]">
-                  Discovered Fragments ({discoveredFloorFragments.length})
-                </span>
-                <span className="text-[10px] text-muted">Click to add to program</span>
-              </div>
-
-              {discoveredFloorFragments.length === 0 ? (
-                <div className="p-4 rounded border border-dashed border-line text-center text-muted">
-                  <p>No code fragments discovered on this floor yet.</p>
-                  <p className="text-[11px] mt-1 text-gold-400/80">
-                    Search desks, hearths, books, and chests in the rooms!
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-1.5 max-h-44 overflow-y-auto pr-1">
-                  {discoveredFloorFragments.map((frag) => {
-                    const isAlreadyPlaced = assembledLines.some((l) => l.fragmentId === frag.id);
-                    return (
-                      <button
-                        key={frag.id}
-                        onClick={() => handleInsertFragment(frag)}
-                        className={`flex items-center justify-between p-2 rounded border text-left transition-all ${
-                          isAlreadyPlaced
-                            ? 'border-line/60 bg-elevated/40 text-muted opacity-80'
-                            : 'border-gold-400/30 bg-elevated hover:border-gold-400 text-ivory hover:scale-[1.01]'
-                        }`}
-                      >
-                        <span className="truncate pr-2">{frag.code}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-graphite text-gold-400 shrink-0 uppercase">
-                          {isAlreadyPlaced ? 'Added' : '+ Add'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Assembled Code Program Block */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-ivory uppercase tracking-wider text-[11px]">
-                  Assembled C++ Program ({assembledLines.length} lines)
-                </span>
-                {assembledLines.length > 0 && (
-                  <button
-                    onClick={handleClearLines}
-                    className="text-[10px] text-muted hover:text-red-400 flex items-center gap-1"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    <span>Clear</span>
-                  </button>
-                )}
-              </div>
-
-              <div className="rounded-lg border border-line bg-obsidian p-2.5 min-h-[140px] space-y-1">
-                {assembledLines.length === 0 ? (
-                  <div className="h-32 flex flex-col items-center justify-center text-muted text-center p-3">
-                    <p className="text-[11px]">Program buffer is currently empty.</p>
-                    <p className="text-[10px] mt-1 text-muted/80">
-                      Select fragments above or explore the house to collect missing statements.
-                    </p>
-                  </div>
-                ) : (
-                  assembledLines.map((line, idx) => (
-                    <div
-                      key={line.instanceId}
-                      className="group flex items-center justify-between px-2 py-1.5 rounded border border-line/60 bg-graphite hover:border-gold-400/40 transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 overflow-hidden">
-                        <span className="text-[10px] font-mono text-muted/60 select-none w-4 text-right">
-                          {idx + 1}
-                        </span>
-                        <code className="text-xs text-ivory truncate">{line.code}</code>
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100">
-                        <button
-                          onClick={() => handleMoveLine(idx, 'up')}
-                          disabled={idx === 0}
-                          className="p-1 rounded hover:bg-elevated text-muted hover:text-ivory disabled:opacity-20"
-                          title="Move Line Up"
-                        >
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={() => handleMoveLine(idx, 'down')}
-                          disabled={idx === assembledLines.length - 1}
-                          className="p-1 rounded hover:bg-elevated text-muted hover:text-ivory disabled:opacity-20"
-                          title="Move Line Down"
-                        >
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={() => handleRemoveLine(line.instanceId)}
-                          className="p-1 rounded hover:bg-elevated text-muted hover:text-red-400 ml-1"
-                          title="Remove Line"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Validation Feedback & Console Log Display */}
-            {validationResult && (
-              <div
-                className={`p-3 rounded-lg border text-xs ${
-                  validationResult.isValid
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-                    : 'border-red-500/40 bg-red-500/10 text-red-200'
-                }`}
-              >
-                <div className="flex items-center gap-2 font-semibold">
-                  {validationResult.isValid ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                  ) : (
-                    <Flame className="h-4 w-4 text-red-400" />
-                  )}
-                  <span>{validationResult.title}</span>
-                </div>
-                <p className="mt-1 leading-relaxed text-ivory/90">{validationResult.message}</p>
-
-                {validationResult.simulatedOutput && (
-                  <pre className="mt-2 p-2 rounded bg-obsidian/90 border border-line text-[10px] text-gold-400/90 whitespace-pre-wrap font-mono">
-                    {validationResult.simulatedOutput}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Panel Bottom Action Bar */}
-          <div className="p-4 border-t border-line bg-elevated">
-            <button
-              onClick={handleValidateSolution}
-              disabled={isValidating || assembledLines.length === 0}
-              className="w-full btn btn-primary py-3 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(208,180,119,0.3)] hover:scale-[1.02] transition-transform disabled:opacity-50"
+            <span
+              className={`badge text-[10px] ${
+                isCurrentRoomSolved
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-gold-400/10 text-gold-400 border border-gold-400/30'
+              }`}
             >
-              <Play className="h-4 w-4 fill-obsidian" />
-              <span>{isValidating ? 'COMPILING & TESTING...' : 'RUN & VALIDATE CODE'}</span>
-            </button>
+              {isCurrentRoomSolved ? '✓ Complete' : 'In Progress'}
+            </span>
+          </div>
+
+          {/* Mission Briefing */}
+          <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+            <div className="p-3.5 rounded-xl border border-line bg-elevated">
+              <span className="text-[10px] font-bold text-gold-400 uppercase tracking-wider block mb-1">
+                Active Objective
+              </span>
+              <h4 className="font-display font-bold text-sm text-ivory">
+                {activeFloor.quest.title}
+              </h4>
+              <p className="text-xs text-muted mt-1 leading-relaxed">
+                {activeFloor.quest.storyBrief}
+              </p>
+            </div>
+
+            {/* Room Devices & Interactable Highlights */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">
+                Interactable Room Devices
+              </span>
+              {activeFloor.objects.map((obj) => (
+                <div
+                  key={obj.id}
+                  onClick={() => handleInteract(obj)}
+                  className="p-3 rounded-lg border border-line bg-elevated/60 hover:bg-elevated transition-colors cursor-pointer flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2.5">
+                    {obj.type === 'terminal' || obj.type === 'grand-terminal' ? (
+                      <Terminal className="w-4 h-4 text-gold-400" />
+                    ) : obj.type === 'bookshelf' ? (
+                      <BookOpen className="w-4 h-4 text-cyan-400" />
+                    ) : obj.type === 'server-rack' ? (
+                      <Cpu className="w-4 h-4 text-red-400" />
+                    ) : (
+                      <Zap className="w-4 h-4 text-amber-400" />
+                    )}
+                    <div>
+                      <p className="font-medium text-ivory">{obj.name}</p>
+                      <p className="text-[10px] text-muted truncate max-w-[220px]">
+                        {obj.hintData ? 'Contains Syntax Cheat Sheet' : obj.linkedChallengeId ? 'Interactive Challenge Console' : obj.inspectText}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-gold-400 font-mono">Inspect ➔</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Launch Challenge Terminal Directly */}
+            {(activeFloor.dsaChallenge || activeFloor.webDevChallenge) && (
+              <div className="pt-2">
+                <button
+                  onClick={() => {
+                    if (activeMode === 'dsa') setActiveDsaChallengeModal(true);
+                    else setActiveWebDevStudioModal(true);
+                  }}
+                  className="w-full btn btn-primary py-3 flex items-center justify-center gap-2 text-xs font-semibold shadow-lg"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>
+                    {isCurrentRoomSolved
+                      ? 'Re-Open Challenge Console'
+                      : activeMode === 'dsa'
+                      ? 'Open C++ Challenge Console'
+                      : 'Open Web Dev Split Studio'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* MODAL 1: Mansion Entrance Title Screen */}
-      {gameState === 'intro' && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-obsidian/90 backdrop-blur-md text-center">
-          <div className="max-w-md w-full rounded-2xl border border-gold-400/30 bg-graphite p-6 sm:p-8 shadow-2xl">
-            <div className="flex items-center justify-center h-16 w-16 rounded-2xl border border-gold-400/30 bg-gold-400/10 text-gold-400 mx-auto mb-4 shadow-[0_0_24px_rgba(208,180,119,0.25)]">
-              <DoorOpen className="h-8 w-8" />
-            </div>
+      {/* ─── MODAL: DSA Challenge Interactive Modal (C++) ─────────────── */}
+      {activeDsaChallengeModal && activeFloor.dsaChallenge && (
+        <DsaTerminalModal
+          challenge={activeFloor.dsaChallenge}
+          isSolved={isCurrentRoomSolved}
+          onClose={() => setActiveDsaChallengeModal(false)}
+          onSolve={handleDsaSolved}
+        />
+      )}
 
-            <span className="text-[10px] uppercase font-mono tracking-widest text-gold-400 font-semibold">
-              AVENIR ARENA EXPEDITION
-            </span>
-            <h2 className="font-display text-2xl sm:text-3xl font-bold text-ivory mt-1">
-              THE CODE HOUSE
-            </h2>
-            <p className="text-xs text-gold-400/90 font-medium mt-0.5">
-              Mysterious C++ Exploration & Puzzle Chamber
-            </p>
+      {/* ─── MODAL: Web Dev Split Studio Modal (HTML & CSS) ───────────── */}
+      {activeWebDevStudioModal && activeFloor.webDevChallenge && (
+        <WebDevStudioModal
+          challenge={activeFloor.webDevChallenge}
+          isSolved={isCurrentRoomSolved}
+          onClose={() => setActiveWebDevStudioModal(false)}
+          onSolve={handleWebDevSolved}
+        />
+      )}
 
-            <p className="text-xs sm:text-sm text-muted mt-3 leading-relaxed">
-              Step inside the grand abandoned mansion. Explore shadowed rooms, inspect bookcases, open
-              locked chests, discover lost C++ code fragments, and assemble working programs at the
-              terminal to unlock higher floors!
-            </p>
-
-            <div className="grid grid-cols-2 gap-2 mt-5 text-[11px] font-mono text-muted text-left">
-              <div className="p-2.5 rounded border border-line bg-elevated">
-                <span className="text-gold-400 block font-bold">4 Floors</span>
-                <span>Foundations to Functions</span>
+      {/* ─── MODAL: Bookshelf Syntax Cheat Sheet ─────────────────────── */}
+      {activeCheatSheetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/85 backdrop-blur-md animate-fade-in">
+          <div className="max-w-lg w-full rounded-xl border border-line bg-graphite p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-line">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-gold-400" />
+                <h3 className="font-display font-bold text-base text-ivory">
+                  {activeCheatSheetModal.title}
+                </h3>
               </div>
-              <div className="p-2.5 rounded border border-line bg-elevated">
-                <span className="text-gold-400 block font-bold">Focus Hearts</span>
-                <span>3 Mistakes Allowed per Quest</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-3 mt-6">
               <button
-                onClick={startExploring}
-                className="btn btn-primary px-8 py-3 text-sm font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(208,180,119,0.3)] hover:scale-105 transition-transform"
+                onClick={() => setActiveCheatSheetModal(null)}
+                className="text-xs text-muted hover:text-ivory"
               >
-                <Play className="h-4 w-4 fill-obsidian" />
-                <span>ENTER MANSION</span>
+                ✕
+              </button>
+            </div>
+
+            <span className="badge bg-gold-400/10 text-gold-400 text-[10px] mb-3">
+              {activeCheatSheetModal.topic}
+            </span>
+
+            <div className="bg-obsidian border border-line rounded-lg p-3 my-3">
+              <span className="text-[10px] text-muted font-mono block mb-1 uppercase tracking-wider">
+                Syntax Reference
+              </span>
+              <pre className="font-mono text-xs text-emerald-400 whitespace-pre-wrap leading-relaxed">
+                {activeCheatSheetModal.syntaxCheatSheet}
+              </pre>
+            </div>
+
+            <div className="space-y-1.5 text-xs text-muted mt-3">
+              <span className="text-[10px] text-ivory font-bold uppercase tracking-wider block mb-1">
+                Scholar Tips
+              </span>
+              {activeCheatSheetModal.tips.map((tip, idx) => (
+                <p key={idx} className="flex items-start gap-1.5">
+                  <span className="text-gold-400">•</span>
+                  <span>{tip}</span>
+                </p>
+              ))}
+            </div>
+
+            <div className="mt-5 pt-3 border-t border-line flex justify-end">
+              <button
+                onClick={() => setActiveCheatSheetModal(null)}
+                className="btn btn-primary text-xs py-2 px-5"
+              >
+                Close Folio
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: Object Inspection / Clue Discovery Modal */}
-      {gameState === 'inspect' && inspectedObject && (
+      {/* ─── MODAL: Generic Inspection Modal ─────────────────────────── */}
+      {gameState === 'inspect' && inspectedObject && !activeCheatSheetModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/85 backdrop-blur-md animate-fade-in">
-          <div className="max-w-md w-full rounded-xl border border-line bg-graphite p-6 shadow-2xl text-left">
-            <div className="flex items-center justify-between pb-3 mb-3 border-b border-line">
+          <div className="max-w-md w-full rounded-2xl border border-line bg-graphite p-6 shadow-2xl text-left">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-line">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-gold-400" />
+                <Compass className="h-4 w-4 text-gold-400" />
                 <h4 className="font-display text-base font-semibold text-ivory">
                   {inspectedObject.name}
                 </h4>
@@ -834,48 +1338,18 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               </button>
             </div>
 
-            <p className="text-xs sm:text-sm text-muted leading-relaxed font-sans">
+            <p className="text-xs text-ivory leading-relaxed mb-4">
               {inspectedObject.inspectText}
             </p>
 
-            {/* Revealed Key item */}
-            {inspectedObject.givesKeyId && (
-              <div className="mt-4 p-3 rounded border border-gold-400/40 bg-gold-400/10 flex items-center gap-3">
-                <Key className="h-5 w-5 text-gold-400" />
-                <div>
-                  <span className="text-[10px] uppercase font-mono text-gold-400 font-bold block">
-                    Key Discovered
-                  </span>
-                  <span className="text-xs font-semibold text-ivory">
-                    {inspectedObject.givesKeyName || 'Brass Key'}
-                  </span>
-                </div>
+            {inspectedObject.givesKeyName && (
+              <div className="p-3 rounded-lg border border-gold-400/30 bg-gold-400/10 text-xs text-gold-400 flex items-center gap-2 mb-3">
+                <Key className="w-4 h-4 shrink-0" />
+                <span>Discovered Item: {inspectedObject.givesKeyName}</span>
               </div>
             )}
 
-            {/* Revealed Fragment */}
-            {inspectedObject.givesFragmentId && (
-              <div className="mt-4 p-3 rounded border border-cyan-500/40 bg-cyan-500/10 space-y-1.5">
-                <span className="text-[10px] uppercase font-mono text-cyan-400 font-bold block">
-                  Code Fragment Discovered
-                </span>
-                <code className="text-xs text-ivory font-mono block bg-obsidian p-2 rounded border border-line">
-                  {
-                    activeFloor.fragments.find((f) => f.id === inspectedObject.givesFragmentId)
-                      ?.code
-                  }
-                </code>
-              </div>
-            )}
-
-            {/* Revealed Clue Note */}
-            {inspectedObject.clueText && (
-              <div className="mt-4 p-3 rounded border border-line bg-elevated text-xs text-gold-400 font-mono">
-                <span>Clue: {inspectedObject.clueText}</span>
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end">
+            <div className="flex justify-end pt-3 border-t border-line">
               <button onClick={closeInspectModal} className="btn btn-primary text-xs py-2 px-5">
                 Continue Exploring [E]
               </button>
@@ -884,181 +1358,29 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
         </div>
       )}
 
-      {/* MODAL 3: Floor Map / Selection Modal */}
-      {gameState === 'floormap' && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-md animate-fade-in">
-          <div className="max-w-lg w-full rounded-2xl border border-line bg-graphite p-6 shadow-2xl text-left">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-line">
-              <div className="flex items-center gap-2">
-                <Layers className="h-5 w-5 text-gold-400" />
-                <h4 className="font-display text-lg font-bold text-ivory">
-                  Mansion Ascension Map
-                </h4>
-              </div>
-              <button
-                onClick={() => setGameState('exploring')}
-                className="text-xs text-muted hover:text-ivory"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {([1, 2, 3, 4] as FloorId[]).map((fId) => {
-                const floorDef = floorsData[fId];
-                const isUnlocked = saveData.unlockedFloors.includes(fId);
-                const isCompleted = saveData.completedFloors.includes(fId);
-                const isCurrent = fId === currentFloorId;
-
-                return (
-                  <div
-                    key={fId}
-                    className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
-                      isCurrent
-                        ? 'border-gold-400 bg-gold-400/10'
-                        : isUnlocked
-                        ? 'border-line bg-elevated hover:border-gold-400/40'
-                        : 'border-line/40 bg-obsidian/40 opacity-50'
-                    }`}
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-display font-bold text-sm text-ivory">
-                          Floor {fId}: {floorDef.name}
-                        </span>
-                        {isCompleted && (
-                          <span className="text-[10px] text-emerald-400 font-mono font-semibold flex items-center gap-0.5">
-                            <CheckCircle2 className="h-3 w-3" /> Done
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted font-sans">{floorDef.theme}</p>
-                    </div>
-
-                    <div>
-                      {isCurrent ? (
-                        <span className="badge bg-gold-400/20 text-gold-400 border border-gold-400/40 text-xs">
-                          Current
-                        </span>
-                      ) : isUnlocked ? (
-                        <button
-                          onClick={() => changeFloor(fId)}
-                          className="btn btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5"
-                        >
-                          <Unlock className="h-3.5 w-3.5" />
-                          <span>Ascend</span>
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-1 text-xs text-muted">
-                          <Lock className="h-3.5 w-3.5" />
-                          <span>Locked</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setGameState('exploring')}
-                className="btn btn-secondary text-xs py-2 px-4"
-              >
-                Close Map
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 4: Clues & Journal Modal */}
-      {gameState === 'journal' && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-md animate-fade-in">
-          <div className="max-w-md w-full rounded-xl border border-line bg-graphite p-6 shadow-2xl text-left">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-line">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-gold-400" />
-                <h4 className="font-display text-base font-semibold text-ivory">
-                  Explorer's Clue Journal
-                </h4>
-              </div>
-              <button
-                onClick={() => setGameState('exploring')}
-                className="text-xs text-muted hover:text-ivory"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-72 overflow-y-auto pr-1 text-xs font-mono">
-              <div className="p-3 rounded border border-line bg-elevated">
-                <span className="text-gold-400 font-bold block mb-1">
-                  Floor {currentFloorId} Objective:
-                </span>
-                <p className="text-muted font-sans leading-relaxed">
-                  {activeFloor.quest.storyBrief}
-                </p>
-              </div>
-
-              <div className="p-3 rounded border border-line bg-elevated">
-                <span className="text-gold-400 font-bold block mb-1">Architectural Hint 1:</span>
-                <p className="text-muted font-sans leading-relaxed">{activeFloor.quest.hint1}</p>
-              </div>
-
-              <div className="p-3 rounded border border-line bg-elevated">
-                <span className="text-gold-400 font-bold block mb-1">Architectural Hint 2:</span>
-                <p className="text-muted font-sans leading-relaxed">{activeFloor.quest.hint2}</p>
-              </div>
-
-              {saveData.discoveredClueIds.length > 0 && (
-                <div className="p-3 rounded border border-gold-400/30 bg-gold-400/5">
-                  <span className="text-gold-400 font-bold block mb-1">Discovered Notes:</span>
-                  <ul className="list-disc list-inside space-y-1 text-ivory/90 font-sans">
-                    {saveData.discoveredClueIds.map((cId) => {
-                      const obj = activeFloor.objects.find((o) => o.id === cId);
-                      return obj?.clueText ? <li key={cId}>{obj.clueText}</li> : null;
-                    })}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-5 flex justify-end">
-              <button
-                onClick={() => setGameState('exploring')}
-                className="btn btn-primary text-xs py-2 px-4"
-              >
-                Close Journal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 5: Quest Success Modal */}
+      {/* ─── MODAL: Room Success Modal ───────────────────────────────── */}
       {gameState === 'success' && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-obsidian/95 backdrop-blur-md text-center animate-fade-in">
-          <div className="max-w-md w-full rounded-2xl border border-gold-400/40 bg-graphite p-6 sm:p-8 shadow-2xl">
-            <div className="flex items-center justify-center h-16 w-16 rounded-full border border-gold-400/40 bg-gold-400/10 text-gold-400 mx-auto mb-4 shadow-[0_0_25px_rgba(208,180,119,0.3)]">
-              <Sparkles className="h-8 w-8" />
+          <div className="max-w-md w-full rounded-2xl border border-gold-400/50 bg-graphite p-6 sm:p-8 shadow-2xl">
+            <div className="flex items-center justify-center h-14 w-14 rounded-full border border-gold-400/40 bg-gold-400/10 text-gold-400 mx-auto mb-3">
+              <Sparkles className="h-7 w-7" />
             </div>
 
-            <h3 className="font-display text-2xl sm:text-3xl font-bold text-ivory tracking-tight">
-              QUEST COMPLETED!
+            <h3 className="font-display text-2xl font-bold text-ivory tracking-tight">
+              ROOM CALIBRATED!
             </h3>
             <p className="text-xs text-gold-400 font-mono mt-1">
-              Floor {currentFloorId}: {activeFloor.quest.title} Solved
+              Room {currentFloorId}: {activeFloor.quest.title} Complete
             </p>
 
             <div className="my-5 p-4 rounded-xl border border-line bg-elevated text-left space-y-2 text-xs">
               <div className="flex items-center justify-between text-muted">
-                <span>Concepts Mastered:</span>
+                <span>Subject Mastered:</span>
                 <span className="text-gold-400 font-bold">{activeFloor.levelBadge}</span>
               </div>
               <div className="flex items-center justify-between text-muted">
-                <span>Completion Time:</span>
-                <span className="text-ivory font-mono">{elapsedSeconds} seconds</span>
+                <span>Time Elapsed:</span>
+                <span className="text-ivory font-mono">{elapsedSeconds}s</span>
               </div>
               <div className="flex items-center justify-between text-muted">
                 <span>Academic XP Earned:</span>
@@ -1069,13 +1391,13 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
             </div>
 
             <div className="flex items-center justify-center gap-3">
-              {currentFloorId < 4 ? (
+              {currentFloorId < maxFloors ? (
                 <button
                   onClick={() => changeFloor((currentFloorId + 1) as FloorId)}
                   className="btn btn-primary px-7 py-3 text-sm font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(208,180,119,0.3)]"
                 >
                   <Unlock className="h-4 w-4" />
-                  <span>Ascend to Floor {currentFloorId + 1}</span>
+                  <span>Advance to Room {currentFloorId + 1}</span>
                 </button>
               ) : (
                 <button
@@ -1091,7 +1413,7 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
         </div>
       )}
 
-      {/* MODAL 6: Out of Focus Hearts (Retry) Modal */}
+      {/* ─── MODAL: Out of Focus Hearts Modal ────────────────────────── */}
       {gameState === 'failed' && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-obsidian/95 backdrop-blur-md text-center animate-fade-in">
           <div className="max-w-md w-full rounded-2xl border border-red-500/40 bg-graphite p-6 sm:p-8 shadow-2xl">
@@ -1103,13 +1425,12 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               FOCUS EXHAUSTED
             </h3>
             <p className="text-xs text-red-400 font-mono mt-0.5">
-              3 In-Game Hearts Lost · Zero Academic XP Deducted
+              3 Hearts Lost · 0 Academic XP Deducted
             </p>
 
             <p className="text-xs text-muted mt-3 leading-relaxed">
-              Your focus was depleted by repeated syntax or ordering errors. Your discovered fragments
-              and inventory remain safe in your pouch. Re-read the journal clues, organize your lines,
-              and try again!
+              Your focus was depleted by repeated syntax or ordering errors. Inspect the bookshelves for
+              syntax cheat sheets and try again!
             </p>
 
             <div className="flex items-center justify-center gap-3 mt-6">
@@ -1125,7 +1446,7 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
         </div>
       )}
 
-      {/* MODAL 7: Audio Settings Modal */}
+      {/* ─── MODAL: Audio Settings ───────────────────────────────────── */}
       {showAudioSettings && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-md animate-fade-in">
           <div className="max-w-sm w-full rounded-xl border border-line bg-graphite p-6 shadow-2xl text-left">
@@ -1172,7 +1493,7 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-medium text-ivory">Mansion Ambience</span>
+                  <span className="font-medium text-ivory">Estate Ambience</span>
                   <button
                     onClick={() => {
                       houseAudio.setAmbienceMute(!audioSettings.ambienceMuted);
@@ -1196,33 +1517,6 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
                   className="w-full accent-gold-400 cursor-pointer"
                 />
               </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-medium text-ivory">Sound Effects (SFX)</span>
-                  <button
-                    onClick={() => {
-                      houseAudio.setSfxMute(!audioSettings.sfxMuted);
-                      setAudioSettings({ ...houseAudio.settings });
-                    }}
-                    className="text-gold-400 hover:underline"
-                  >
-                    {audioSettings.sfxMuted ? 'Unmute' : 'Mute'}
-                  </button>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={audioSettings.sfxMuted ? 0 : audioSettings.sfxVolume}
-                  onChange={(e) => {
-                    houseAudio.setSfxVolume(parseFloat(e.target.value));
-                    setAudioSettings({ ...houseAudio.settings });
-                  }}
-                  className="w-full accent-gold-400 cursor-pointer"
-                />
-              </div>
             </div>
 
             <div className="mt-6 pt-3 border-t border-line flex justify-end">
@@ -1235,6 +1529,126 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── MODAL: Estate Map ────────────────────────────────────────── */}
+      {gameState === 'floormap' && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-md animate-fade-in">
+          <div className="max-w-lg w-full rounded-xl border border-line bg-graphite p-6 shadow-2xl text-left">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-line">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-gold-400" />
+                <h4 className="font-display text-base font-semibold text-ivory">
+                  {activeMode === 'dsa' ? 'Algorithmic Facility Map' : 'Web Estate Map'}
+                </h4>
+              </div>
+              <button
+                onClick={() => setGameState('exploring')}
+                className="text-xs text-muted hover:text-ivory"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {Object.values(activeEstate).slice(0, maxFloors).map((floorItem) => {
+                const isUnlocked = saveData.unlockedFloors.includes(floorItem.id);
+                const isCompleted = saveData.completedFloors.includes(floorItem.id);
+                const isCurrent = currentFloorId === floorItem.id;
+
+                return (
+                  <div
+                    key={floorItem.id}
+                    onClick={() => {
+                      if (isUnlocked) changeFloor(floorItem.id);
+                    }}
+                    className={`p-3.5 rounded-lg border transition-all flex items-center justify-between text-xs ${
+                      isCurrent
+                        ? 'border-gold-400 bg-gold-400/10'
+                        : isUnlocked
+                        ? 'border-line bg-elevated hover:bg-elevated/80 cursor-pointer'
+                        : 'border-line/40 bg-elevated/30 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded bg-graphite border border-line">
+                        {isCompleted ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : isUnlocked ? (
+                          <Unlock className="w-4 h-4 text-gold-400" />
+                        ) : (
+                          <Lock className="w-4 h-4 text-muted" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-display font-semibold text-ivory">
+                          Room {floorItem.id}: {floorItem.name}
+                        </p>
+                        <p className="text-[10px] text-muted">{floorItem.levelBadge}</p>
+                      </div>
+                    </div>
+
+                    <span className="text-[10px] font-mono text-muted">
+                      {isCurrent ? 'Current' : isCompleted ? 'Completed' : isUnlocked ? 'Enter ➔' : 'Locked'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 pt-3 border-t border-line flex justify-end">
+              <button
+                onClick={() => setGameState('exploring')}
+                className="btn btn-secondary text-xs py-2 px-5"
+              >
+                Close Map
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: Segfault Void ─────────────────────────────────────── */}
+      {segfaultTrapAddress && (
+        <SegfaultVoidModal
+          pointerAddress={segfaultTrapAddress}
+          onRespawn={handleRespawnFromSegfault}
+        />
+      )}
+
+      {/* ─── MODAL: NPC Dialog ────────────────────────────────────────── */}
+      {activeNpcCharacter && (
+        <NpcDialogModal
+          npc={activeNpcCharacter}
+          mode={activeMode}
+          floorId={currentFloorId}
+          isSolved={isCurrentRoomSolved}
+          onClose={() => setActiveNpcCharacter(null)}
+        />
+      )}
+
+      {/* ─── MODAL: Decor Shop ────────────────────────────────────────── */}
+      {isDecorShopOpen && (
+        <DecorShopModal
+          currentFloorId={currentFloorId}
+          playerPos={playerPos}
+          byteBits={saveData.byteBits ?? 0}
+          unlockedDecorIds={saveData.unlockedDecorIds || []}
+          placedDecors={saveData.placedDecors || []}
+          isRoomRestored={isCurrentRoomSolved}
+          onClose={() => setIsDecorShopOpen(false)}
+          onPurchase={handlePurchaseDecor}
+          onPlace={handlePlaceDecor}
+          onRemovePlaced={handleRemovePlacedDecor}
+        />
+      )}
+
+      {/* ─── MODAL: Mini-Game Arcade ──────────────────────────────────── */}
+      {isMiniGameOpen && (
+        <MiniGameModal
+          onClose={() => setIsMiniGameOpen(false)}
+          onReward={handleMiniGameReward}
+        />
       )}
     </div>
   );
