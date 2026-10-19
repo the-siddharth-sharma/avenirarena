@@ -257,33 +257,45 @@ export function OnboardingModal() {
     setIsSubmitting(true);
 
     try {
-      // 1. Critical Firestore Data Upsert with { merge: true } to preserve existing XP or Streaks
+      console.log("1. Starting Firestore Write for User:", currentUser.uid);
+      
       const userRef = doc(db, 'users', currentUser.uid);
-      await setDoc(
-        userRef,
-        {
-          campus: selectedCampus,
-          yearOfStudy: yearOfStudy,
-          batchCohort: batchCohort.trim(),
-          isRegistered: true,
-          // Sync full cadet profile attributes for AuthContext and Leaderboard
-          username: username.trim(),
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          avatarUrl: selectedAvatarUrl,
-          year: yearOfStudy,
-          batch: batchCohort.trim(),
-          isSetupComplete: true,
-          socialLinks: {
-            linkedin: linkedinUrl.trim(),
-            other: otherUrl.trim(),
-          },
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
+      
+      // FIREBASE TIMEOUT GUARD (Agar DB 5 sec me response na de, toh infinite load roko)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore write timeout! Please check internet or Firebase Rules.')), 5000)
       );
 
-      // 2. Persist to AuthContext memory so isOnboardingRequired immediately resolves to false
+      // Save to Firebase Database safely
+      await Promise.race([
+        setDoc(
+          userRef,
+          {
+            campus: selectedCampus,
+            yearOfStudy: yearOfStudy,
+            batchCohort: batchCohort.trim(),
+            isRegistered: true,
+            username: username.trim(),
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            avatarUrl: selectedAvatarUrl,
+            year: yearOfStudy,
+            batch: batchCohort.trim(),
+            isSetupComplete: true,
+            socialLinks: {
+              linkedin: linkedinUrl.trim(),
+              other: otherUrl.trim(),
+            },
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        ),
+        timeoutPromise
+      ]);
+
+      console.log("2. Firestore Write Successful! Updating local profile...");
+
+      // Persist to AuthContext memory
       await saveUserProfile({
         username: username.trim(),
         firstName: firstName.trim(),
@@ -298,16 +310,20 @@ export function OnboardingModal() {
         },
       });
 
-      // 3. Portal Ingress: Navigate user into the main application dashboard
+      console.log("3. Profile updated. Triggering Ingress!");
+
+      // Portal Ingress
       navigate('/dashboard');
       window.location.hash = '/dashboard';
-    } catch (err) {
+      
+   } catch (err) {
       console.error('[AVENIR ARENA ONBOARDING] Ingress registration failed:', err);
-      setSubmitError('Failed to establish database ingress. Please try again.');
+      // Ab error directly screen par dikhega aur TypeScript strictness fix ho gayi
+      setSubmitError((err as Error).message || 'Failed to establish database ingress. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }
 
   return (
     <div
