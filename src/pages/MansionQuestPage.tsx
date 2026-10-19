@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { mansionLevels } from '@/components/SyntaxMansion/levelsData';
 import { mansionAudio } from '@/components/SyntaxMansion/mansionAudio';
+import { GamePlayerAvatar, usePlayerIdentity } from '@/components/game-core';
 import type { ClueItem, GridPosition, MansionLevel } from '@/components/SyntaxMansion/types';
 
 interface MansionQuestPageProps {
@@ -31,6 +32,8 @@ interface MansionQuestPageProps {
 }
 
 export function MansionQuestPage({ navigate }: MansionQuestPageProps) {
+  const playerIdentity = usePlayerIdentity();
+
   // Level State
   const [currentLevelIndex, setCurrentLevelIndex] = useState<number>(0);
   const currentLevel: MansionLevel = mansionLevels[currentLevelIndex] || mansionLevels[0];
@@ -477,22 +480,15 @@ export function MansionQuestPage({ navigate }: MansionQuestPageProps) {
                         </div>
                       )}
 
-                      {/* Player Avatar Dot */}
+                      {/* Player Avatar via Game Core Component */}
                       {isPlayer && (
-                        <div
-                          className="relative h-6 w-6 sm:h-7 sm:w-7 rounded-full bg-cyan-400 border-2 border-slate-950 flex items-center justify-center shadow-[0_0_16px_rgba(6,182,212,1)] z-20 transition-all duration-150 ease-out"
-                        >
-                          {/* Directional visor indicator */}
-                          <div
-                            className={`h-1.5 w-1.5 rounded-full bg-slate-950 absolute ${
-                              playerFacing === 'up'
-                                ? 'top-0.5'
-                                : playerFacing === 'down'
-                                ? 'bottom-0.5'
-                                : playerFacing === 'left'
-                                ? 'left-0.5'
-                                : 'right-0.5'
-                            }`}
+                        <div className="relative z-20 transition-all duration-150 ease-out flex items-center justify-center">
+                          <GamePlayerAvatar
+                            identity={playerIdentity}
+                            size="sm"
+                            showRing={true}
+                            showDirectionPip={true}
+                            facing={playerFacing}
                           />
                         </div>
                       )}

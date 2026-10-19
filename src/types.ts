@@ -54,7 +54,10 @@ export interface Student {
 export type EditableStudentProfile = Pick<
   Student,
   'displayName' | 'avatarColor' | 'courseBranch' | 'year' | 'batch' | 'campus'
->;
+> & {
+  linkedin?: string;
+  other?: string;
+};
 
 export interface StudentProfile extends Student {
   profileCompletion: number;

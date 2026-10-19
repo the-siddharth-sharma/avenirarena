@@ -3,7 +3,6 @@ import { Bell } from 'lucide-react';
 import { useState } from 'react';
 import { StudentAvatar } from './StudentAvatar';
 import { ThemeToggle } from './ThemeToggle';
-import { DemoStudentSelector } from './DemoStudentSelector';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
 import { demoNotifications } from '@/data/demoData';
@@ -28,7 +27,6 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
 
       <div className="flex items-center gap-2.5">
         {actions}
-        <DemoStudentSelector />
         <ThemeToggle />
         <div className="relative">
           <button

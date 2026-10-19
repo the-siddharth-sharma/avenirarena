@@ -11,7 +11,11 @@ import type {
   WorldObject,
 } from './types';
 import { houseAudio } from './audio';
+<<<<<<< HEAD
 import { DECOR_CATALOG } from './decorShop';
+=======
+import { usePlayerIdentity, drawPlayerAvatarToCanvas, type PlayerIdentity } from '@/components/game-core';
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
 interface CodeHouseCanvasProps {
   floor: FloorDefinition;
@@ -25,6 +29,7 @@ interface CodeHouseCanvasProps {
   onInteract: (obj: WorldObject) => void;
   onPlayerMove: (newPos: Position, facing: 'up' | 'down' | 'left' | 'right', moving: boolean) => void;
   activeKeys: Set<string>;
+<<<<<<< HEAD
   roomStates?: Record<string, RoomState>;
   // Dynamic Game Systems Props
   bugs?: BugEntity[];
@@ -35,6 +40,11 @@ interface CodeHouseCanvasProps {
   confettiActive?: boolean;
   onRoomConnection?: (conn: RoomConnection) => void;
   onSegfaultTrap?: (pointerAddress?: string) => void;
+=======
+  identity?: PlayerIdentity;
+  username?: string;
+  avatarUrl?: string;
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 }
 
 const PLAYER_RADIUS = 16;
@@ -52,6 +62,7 @@ export function CodeHouseCanvas({
   onInteract,
   onPlayerMove,
   activeKeys,
+<<<<<<< HEAD
   roomStates = {},
   bugs = [],
   onSquashBug,
@@ -61,12 +72,18 @@ export function CodeHouseCanvas({
   confettiActive = false,
   onRoomConnection,
   onSegfaultTrap,
+=======
+  identity: propIdentity,
+  username: propUsername,
+  avatarUrl: propAvatarUrl,
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 }: CodeHouseCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(performance.now());
   const flameTimerRef = useRef<number>(0);
 
+<<<<<<< HEAD
   // Screen shake and floating text state
   const shakeTimerRef = useRef<number>(0);
   const floatingTextsRef = useRef<
@@ -118,6 +135,18 @@ export function CodeHouseCanvas({
       confettiRef.current = particles;
     }
   }, [confettiActive, playerPos.x, playerPos.y]);
+=======
+  const hookIdentity = usePlayerIdentity();
+  const playerIdentity = propIdentity || hookIdentity;
+
+  // Ref for 60 FPS Canvas render loop to access current identity without closure thrashing
+  const playerIdentityRef = useRef(playerIdentity);
+  playerIdentityRef.current = {
+    ...playerIdentity,
+    ...(propUsername ? { username: propUsername } : {}),
+    ...(propAvatarUrl ? { avatarUrl: propAvatarUrl } : {}),
+  };
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
   // Initialize atmospheric dust motes
   useEffect(() => {
@@ -913,6 +942,7 @@ export function CodeHouseCanvas({
     ctx.ellipse(0, 10, PLAYER_RADIUS * 0.9, PLAYER_RADIUS * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
+<<<<<<< HEAD
     // Body Cloak
     ctx.fillStyle = '#1E232A';
     ctx.beginPath();
@@ -923,6 +953,27 @@ export function CodeHouseCanvas({
     ctx.stroke();
 
     // Head Visor / Directional Indicator
+=======
+    // Universal Player Avatar Sprite from Game Core Identity System
+    drawPlayerAvatarToCanvas(ctx, playerIdentityRef.current, {
+      x: 0,
+      y: 0,
+      bob,
+      radius: PLAYER_RADIUS,
+      ringColor: '#D0B477',
+      ringWidth: 2,
+      shadowColor: '#D0B477',
+      shadowBlur: 0,
+      showDirectionPip: true,
+      facing,
+      pipColor: '#00F0FF',
+    });
+
+    // Lantern in hand
+    let lanternX = 14;
+    let lanternY = 4;
+    if (facing === 'left') lanternX = -14;
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
     ctx.fillStyle = '#D0B477';
     if (facing === 'down') {
       ctx.fillRect(-6, bob + 2, 12, 5);

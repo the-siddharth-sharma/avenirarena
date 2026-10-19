@@ -23,6 +23,7 @@ import {
 import { codeChallenges, getRandomChallenges, type CodeChallenge } from './challenges';
 import { soundCtrl, type AudioSettings } from './audio';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+<<<<<<< HEAD
 import {
   codeRunnerLevels,
   getSavedProgression,
@@ -34,6 +35,9 @@ import {
 import { LevelSelector } from './LevelSelector';
 import { DsaCodeLabModal } from './DsaCodeLabModal';
 import { LevelCompletionModal } from './LevelCompletionModal';
+=======
+import { usePlayerIdentity, drawPlayerAvatarToCanvas } from '@/components/game-core';
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
 interface Particle {
   x: number;
@@ -70,10 +74,28 @@ interface WrongReviewState {
 
 interface CodeRunnerGameProps {
   onExit: () => void;
+  username?: string;
+  avatarUrl?: string;
 }
 
+<<<<<<< HEAD
 export function CodeRunnerGame({ onExit }: CodeRunnerGameProps) {
   const { selectedStudent, submitGame, gameCompletions, submitCodeRunnerLevel } = useStudentProfiles();
+=======
+export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: propAvatarUrl }: CodeRunnerGameProps) {
+  const { selectedStudent, submitGame, gameCompletions } = useStudentProfiles();
+  const playerIdentity = usePlayerIdentity();
+
+  // Ref for 60 FPS Canvas render loop to access current identity without closure thrashing
+  const playerIdentityRef = useRef(playerIdentity);
+  playerIdentityRef.current = {
+    ...playerIdentity,
+    ...(propUsername ? { username: propUsername } : {}),
+    ...(propAvatarUrl ? { avatarUrl: propAvatarUrl } : {}),
+  };
+
+  const username = playerIdentityRef.current.username;
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -987,6 +1009,19 @@ export function CodeRunnerGame({ onExit }: CodeRunnerGameProps) {
         ctx.shadowBlur = 8;
         ctx.fill();
         ctx.shadowBlur = 0;
+
+        // Universal Human-like Player Avatar floating above vehicle cockpit via Game Core
+        drawPlayerAvatarToCanvas(ctx, playerIdentityRef.current, {
+          x: 0,
+          y: -42,
+          radius: 14,
+          tetherStartY: -22,
+          tetherColor: 'rgba(208, 180, 119, 0.6)',
+          ringColor: '#D0B477',
+          ringWidth: 2,
+          shadowColor: '#D0B477',
+          shadowBlur: 10,
+        });
 
         ctx.restore();
       }

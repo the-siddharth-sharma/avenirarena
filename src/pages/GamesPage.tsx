@@ -33,7 +33,7 @@ const icons: Record<LearningGameId, typeof Code2> = {
 
 export function GamesPage({ navigate }: NavigateProps) {
   const { gameAttempts, gameCompletions, submitGame } = useStudentProfiles();
-  const { currentUser, openAuthModal } = useAuth();
+  const { currentUser, userProfile, openAuthModal } = useAuth();
   const [playingCodeRunner, setPlayingCodeRunner] = useState(false);
   const [playingCodeHouse, setPlayingCodeHouse] = useState(false);
   const [activeGame, setActiveGame] = useState<LearningGameDefinition | null>(null);
@@ -104,7 +104,11 @@ export function GamesPage({ navigate }: NavigateProps) {
           title="The Code House"
           subtitle="Mysterious C++ Exploration & Code Assembly · 4 Playable Mansion Floors"
         />
-        <CodeHouseGame onExit={() => setPlayingCodeHouse(false)} />
+        <CodeHouseGame
+          onExit={() => setPlayingCodeHouse(false)}
+          username={userProfile?.username || currentUser.displayName}
+          avatarUrl={userProfile?.avatarUrl || currentUser.photoURL}
+        />
       </div>
     );
   }
@@ -117,7 +121,11 @@ export function GamesPage({ navigate }: NavigateProps) {
           title="Code Runner 3D"
           subtitle="Cyber Endless Syntax Runner · 3 Lanes · Full Playable Experience"
         />
-        <CodeRunnerGame onExit={() => setPlayingCodeRunner(false)} />
+        <CodeRunnerGame
+          onExit={() => setPlayingCodeRunner(false)}
+          username={userProfile?.username || currentUser.displayName}
+          avatarUrl={userProfile?.avatarUrl || currentUser.photoURL}
+        />
       </div>
     );
   }

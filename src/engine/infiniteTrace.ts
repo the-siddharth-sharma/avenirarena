@@ -319,6 +319,29 @@ export class TraceEngine {
     const onPointerMove = (e: PointerEvent) => {
       if (document.hidden) return;
 
+      // Strictly scope streak tracking to Left Section Bar (Sidebar) AND Dashboard section
+      const target = e.target as HTMLElement | null;
+      const hashPath =
+        typeof window !== 'undefined'
+          ? window.location.hash.replace(/^#/, '') || '/dashboard'
+          : '/dashboard';
+      const isDashboard = hashPath === '/dashboard' || hashPath === '/';
+      const isInsideSidebar = Boolean(target?.closest('aside, [data-sidebar="true"]'));
+      const isRegistrationTerminal = Boolean(
+        target?.closest('[data-registration-terminal="true"]') ||
+        (typeof document !== 'undefined' && document.querySelector('[data-registration-terminal="true"]'))
+      );
+
+      // MUST NOT track streaks on the Student Registration Terminal, nor on internal pages outside sidebar
+      if (isRegistrationTerminal || (!isDashboard && !isInsideSidebar)) {
+        if (this.state.motionStreak > 0 || this.state.isPointerMoving) {
+          this.breakCurrentStreak();
+        }
+        this.lastPointerX = -1;
+        this.lastPointerY = -1;
+        return;
+      }
+
       if (this.lastPointerX < 0 || this.lastPointerY < 0) {
         this.lastPointerX = e.clientX;
         this.lastPointerY = e.clientY;
@@ -346,6 +369,17 @@ export class TraceEngine {
 
     const onScroll = () => {
       if (document.hidden) return;
+
+      const hashPath =
+        typeof window !== 'undefined'
+          ? window.location.hash.replace(/^#/, '') || '/dashboard'
+          : '/dashboard';
+      const isDashboard = hashPath === '/dashboard' || hashPath === '/';
+      const isRegistrationTerminal = Boolean(
+        typeof document !== 'undefined' && document.querySelector('[data-registration-terminal="true"]')
+      );
+      if (isRegistrationTerminal || !isDashboard) return;
+
       const currentScrollY = window.scrollY || document.documentElement.scrollTop;
 
       if (this.lastScrollY < 0) {

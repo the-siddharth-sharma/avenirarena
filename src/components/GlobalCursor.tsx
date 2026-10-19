@@ -21,9 +21,18 @@ interface FlyingStreakItem {
  * - Guaranteed memory cleanup with DOM removal on flight completion.
  * - Bypasses decorative flight on prefers-reduced-motion and touch devices.
  */
-export function GlobalCursor() {
+interface GlobalCursorProps {
+  currentPath?: string;
+}
+
+export function GlobalCursor({ currentPath = '/dashboard' }: GlobalCursorProps) {
   const [enabled, setEnabled] = useState(false);
   const { selectedStudent } = useStudentProfiles();
+  const currentPathRef = useRef(currentPath);
+
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
 
   const dotRef = useRef<HTMLDivElement>(null);
   const auraRef = useRef<HTMLDivElement>(null);
@@ -82,10 +91,28 @@ export function GlobalCursor() {
         initialized = true;
       }
 
+      // Strictly scope cursor animation to Left Navigation Column (Sidebar) AND Dashboard view
+      const target = e.target as HTMLElement | null;
+      const activePath =
+        currentPathRef.current ||
+        (typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '') ||
+        '/dashboard';
+      const isDashboard = activePath === '/dashboard' || activePath === '/';
+      const isInsideSidebar = Boolean(target?.closest('aside, [data-sidebar="true"]'));
+      const isRegistrationTerminal = Boolean(
+        target?.closest('[data-registration-terminal="true"]') ||
+        document.querySelector('[data-registration-terminal="true"]')
+      );
+
+      // MUST NOT render on Registration Terminal, nor on internal pages outside sidebar
+      if (isRegistrationTerminal || (!isDashboard && !isInsideSidebar)) {
+        pos.isVisible = false;
+        return;
+      }
+
       pos.isVisible = true;
 
       // Detect interactive vs text target
-      const target = e.target as HTMLElement | null;
       if (target) {
         const isInteractive = Boolean(
           target.closest(
@@ -123,6 +150,16 @@ export function GlobalCursor() {
     const unsubscribeStreakBreak = traceEngine.onStreakBreak((event: StreakBreakEvent) => {
       // Guard: strictly ignore streak break events that do not match the current student
       if (event.studentId !== traceEngine.getActiveStudentId()) return;
+
+      const activePath =
+        currentPathRef.current ||
+        (typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '') ||
+        '/dashboard';
+      const isDashboard = activePath === '/dashboard' || activePath === '/';
+      const isRegistrationTerminal = Boolean(document.querySelector('[data-registration-terminal="true"]'));
+
+      // Strictly block flying streak breaks on registration terminal or internal pages
+      if (isRegistrationTerminal || !isDashboard) return;
 
       // If score is tiny or reduced motion is on, don't animate flight
       if (event.score <= 0 || prefersReducedMotion || !flyingContainerRef.current) return;

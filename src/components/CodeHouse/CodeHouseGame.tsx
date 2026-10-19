@@ -31,6 +31,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+<<<<<<< HEAD
 import { DSA_ESTATE_FLOORS, WEBDEV_ESTATE_FLOORS } from './estateData';
 import { DsaTerminalModal } from './DsaTerminalModal';
 import { WebDevStudioModal } from './WebDevStudioModal';
@@ -40,6 +41,10 @@ import { NpcDialogModal } from './NpcDialogModal';
 import { SegfaultVoidModal } from './SegfaultVoidModal';
 import { NPC_CHARACTERS } from './npcDialog';
 import { DECOR_CATALOG } from './decorShop';
+=======
+import { usePlayerIdentity } from '@/components/game-core';
+import { floorsData } from './floorsData';
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 import { validateCodeAssembly } from './validator';
 import { houseAudio } from './audio';
 import { CodeHouseCanvas } from './CodeHouseCanvas';
@@ -64,6 +69,8 @@ import type {
 
 interface CodeHouseGameProps {
   onExit: () => void;
+  username?: string;
+  avatarUrl?: string;
 }
 
 const STORAGE_PREFIX = 'avenir_codehouse_v2_';
@@ -137,8 +144,18 @@ const DEFAULT_STUDENT_DATA = (studentId: string): StudentCodeHouseData => ({
   roomStates: {},
 });
 
-export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
+export function CodeHouseGame({ onExit, username: propUsername, avatarUrl: propAvatarUrl }: CodeHouseGameProps) {
   const { selectedStudent } = useStudentProfiles();
+  const playerIdentity = usePlayerIdentity();
+
+  const resolvedIdentity = useMemo(() => ({
+    ...playerIdentity,
+    ...(propUsername ? { username: propUsername } : {}),
+    ...(propAvatarUrl ? { avatarUrl: propAvatarUrl } : {}),
+  }), [playerIdentity, propUsername, propAvatarUrl]);
+
+  const username = resolvedIdentity.username;
+  const avatarUrl = resolvedIdentity.avatarUrl;
 
   // Mode Selection State
   const [activeMode, setActiveMode] = useState<CodeHouseMode>('dsa');
@@ -1098,6 +1115,7 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
               setIsMoving(moving);
             }}
             activeKeys={activeKeysRef.current}
+<<<<<<< HEAD
             roomStates={saveData.roomStates}
             bugs={activeBugs}
             onSquashBug={handleSquashBug}
@@ -1107,6 +1125,11 @@ export function CodeHouseGame({ onExit }: CodeHouseGameProps) {
             confettiActive={confettiActive}
             onRoomConnection={handleRoomConnection}
             onSegfaultTrap={handleSegfaultTrap}
+=======
+            identity={resolvedIdentity}
+            username={username}
+            avatarUrl={avatarUrl}
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
           />
 
           {/* Mobile Virtual Controls */}

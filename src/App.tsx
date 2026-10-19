@@ -9,13 +9,23 @@ import { ActivityPage } from '@/pages/ActivityPage';
 import { FacultyPage } from '@/pages/FacultyPage';
 import { DailyQuizPage } from '@/pages/DailyQuizPage';
 import { MansionQuestPage } from '@/pages/MansionQuestPage';
+import { CommunityPage } from '@/pages/CommunityPage';
+import { PublicProfilePage } from '@/pages/PublicProfilePage';
+import { SearchPage } from '@/pages/SearchPage';
+import { AdminPage } from '@/pages/AdminPage';
 import { useAuth } from '@/context/AuthContext';
 import { AuthModal } from '@/components/AuthModal';
+import { LandingAuthScreen } from '@/components/LandingAuthScreen';
+import { OnboardingModal } from '@/components/OnboardingModal';
 import { Logo } from '@/components/Logo';
 
 function App() {
   const { path, navigate } = useRouter();
-  const { isLoading } = useAuth();
+  const { currentUser, isLoading, isOnboardingRequired, isAdmin } = useAuth();
+
+  const isAdminSession =
+    typeof window !== 'undefined' &&
+    sessionStorage.getItem('avenir_admin_session') === 'true';
 
   if (isLoading) {
     return (
@@ -32,16 +42,45 @@ function App() {
     );
   }
 
+  // 1. Direct Admin Access if authenticated via Admin Portal
+  if (path === '/admin' && isAdminSession) {
+    return (
+      <AppLayout currentPath={path} onNavigate={navigate}>
+        <AdminPage navigate={navigate} />
+      </AppLayout>
+    );
+  }
+
+  // 2. Unauthenticated -> Show Landing/Auth Screen
+  if (!currentUser) {
+    return (
+      <>
+        <AuthModal />
+        <LandingAuthScreen />
+      </>
+    );
+  }
+
   const renderPage = () => {
+    // Dynamic matching for /player/:id
+    if (path.startsWith('/player/')) {
+      const playerId = path.replace(/^\/player\/?/, '') || 'me';
+      return <PublicProfilePage playerId={playerId} navigate={navigate} />;
+    }
+
     switch (path) {
       case '/dashboard':
         return <DashboardPage navigate={navigate} />;
+      case '/search':
+        return <SearchPage navigate={navigate} />;
       case '/games':
         return <GamesPage navigate={navigate} />;
       case '/mansion-quest':
         return <MansionQuestPage navigate={navigate} />;
       case '/quiz':
         return <DailyQuizPage navigate={navigate} />;
+      case '/community':
+        return <CommunityPage navigate={navigate} />;
       case '/quests':
         return <QuestsPage />;
       case '/leaderboard':
@@ -52,6 +91,11 @@ function App() {
         return <ActivityPage />;
       case '/faculty':
         return <FacultyPage />;
+      case '/admin':
+        if (!isAdmin && !isAdminSession) {
+          return <DashboardPage navigate={navigate} />;
+        }
+        return <AdminPage navigate={navigate} />;
       default:
         return <DashboardPage navigate={navigate} />;
     }
@@ -60,9 +104,15 @@ function App() {
   return (
     <>
       <AuthModal />
-      <AppLayout currentPath={path} onNavigate={navigate}>
-        {renderPage()}
-      </AppLayout>
+      {/* 3. Authenticated but NO profile -> Mandatory Registration Terminal */}
+      {isOnboardingRequired ? (
+        <OnboardingModal />
+      ) : (
+        /* 4. Main Portal */
+        <AppLayout currentPath={path} onNavigate={navigate}>
+          {renderPage()}
+        </AppLayout>
+      )}
     </>
   );
 }
