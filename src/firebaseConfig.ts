@@ -39,14 +39,17 @@ export interface QuizDoc {
 }
 
 // 1. Production Firebase Configuration from Environment Variables
-export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyAvenirArenaProductionKeyPlaceholder',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'avenir-arena.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'avenir-arena',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'avenir-arena.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1026711910319',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1026711910319:web:avenirarena2026',
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
+
+// Truth Test: Yeh line humein console mein batayegi ki key read hui ya nahi
+console.log("Current API Key is:", firebaseConfig.apiKey);
 
 // Local storage backup keys for offline resilience & graceful fallback
 const FIRESTORE_USERS_KEY = 'avenir_firestore_users_v1';
