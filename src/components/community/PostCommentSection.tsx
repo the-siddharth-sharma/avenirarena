@@ -61,26 +61,30 @@ interface CommentItemProps {
   postId: string;
   onDelete: (commentId: string) => void;
   canDelete: boolean;
+  onLikeChange?: (commentId: string, newLiked: boolean, newCount: number) => void;
 }
 
-function CommentItem({ comment, postId, onDelete, canDelete }: CommentItemProps) {
+function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: CommentItemProps) {
   const { currentUser, openAuthModal } = useAuth();
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(comment.likeCount || 0);
   const [isLiking, setIsLiking] = useState(false);
+  const [likeError, setLikeError] = useState<string | null>(null);
 
-  // Sync likeCount whenever remote comment changes
+  // Ref guarding against in-flight race conditions & stale snapshot overrides
+  const isLikingRef = useRef(false);
+
+  // Sync likeCount whenever remote comment changes (unless local like operation is actively in-flight)
   useEffect(() => {
+    if (isLikingRef.current) return;
     if (typeof comment.likeCount === 'number') {
       setLikeCount(comment.likeCount);
     }
   }, [comment.likeCount]);
 
-  // Dedicated, stable listener for current user's like document on this specific comment
-  // Notice: this effect strictly depends on [postId, comment.id, currentUser]
-  // It NEVER re-runs or resets when likes are toggled!
+  // Dedicated, deterministic listener for current user's reaction document
   useEffect(() => {
-    if (!currentUser) {
+    if (!currentUser?.uid || postId.startsWith('local-') || comment.id.startsWith('local-')) {
       setIsLiked(false);
       return;
     }
@@ -100,6 +104,8 @@ function CommentItem({ comment, postId, onDelete, canDelete }: CommentItemProps)
       likeDocRef,
       (snap) => {
         if (!isMounted) return;
+        // Never allow a stale or transitional snapshot to clobber an active in-flight operation
+        if (isLikingRef.current) return;
         setIsLiked(snap.exists());
       },
       (err) => {
@@ -111,15 +117,19 @@ function CommentItem({ comment, postId, onDelete, canDelete }: CommentItemProps)
       isMounted = false;
       unsub();
     };
-  }, [postId, comment.id, currentUser]);
+  }, [postId, comment.id, currentUser?.uid]);
 
   const handleToggleLike = async () => {
     if (!currentUser) {
       openAuthModal();
       return;
     }
-    if (isLiking) return;
+
+    // Prevent duplicate clicks or race conditions
+    if (isLiking || isLikingRef.current) return;
+    isLikingRef.current = true;
     setIsLiking(true);
+    setLikeError(null);
 
     const prevLiked = isLiked;
     const prevCount = likeCount;
@@ -129,6 +139,13 @@ function CommentItem({ comment, postId, onDelete, canDelete }: CommentItemProps)
     const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
     setIsLiked(nextLiked);
     setLikeCount(nextCount);
+    onLikeChange?.(comment.id, nextLiked, nextCount);
+
+    if (postId.startsWith('local-') || comment.id.startsWith('local-')) {
+      isLikingRef.current = false;
+      setIsLiking(false);
+      return;
+    }
 
     try {
       const commentRef = doc(db, 'community_messages', postId, 'comments', comment.id);
@@ -142,37 +159,56 @@ function CommentItem({ comment, postId, onDelete, canDelete }: CommentItemProps)
         currentUser.uid
       );
 
-      await runTransaction(db, async (tx) => {
+      // Timeout safety guard (8s) prevents UI from locking on degraded connections
+      const transactionPromise = runTransaction(db, async (tx) => {
         const likeSnap = await tx.get(likeRef);
         const commentSnap = await tx.get(commentRef);
 
         const currentLikes = commentSnap.exists()
-          ? (commentSnap.data().likeCount ?? 0)
+          ? Number(commentSnap.data().likeCount ?? 0)
           : prevCount;
 
         if (likeSnap.exists()) {
-          // Unlike
+          // Unlike: delete deterministic reaction document and decrement aggregate count
           tx.delete(likeRef);
-          tx.update(commentRef, {
-            likeCount: Math.max(0, currentLikes - 1),
-          });
+          if (commentSnap.exists()) {
+            tx.update(commentRef, {
+              likeCount: Math.max(0, currentLikes - 1),
+            });
+          } else {
+            tx.set(commentRef, { likeCount: Math.max(0, currentLikes - 1) }, { merge: true });
+          }
         } else {
-          // Like
+          // Like: create deterministic reaction document and increment aggregate count
           tx.set(likeRef, {
             uid: currentUser.uid,
             createdAt: Date.now(),
           });
-          tx.update(commentRef, {
-            likeCount: currentLikes + 1,
-          });
+          if (commentSnap.exists()) {
+            tx.update(commentRef, {
+              likeCount: currentLikes + 1,
+            });
+          } else {
+            tx.set(commentRef, { likeCount: currentLikes + 1 }, { merge: true });
+          }
         }
       });
-    } catch (err) {
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Reaction operation timed out')), 8000)
+      );
+
+      await Promise.race([transactionPromise, timeoutPromise]);
+    } catch (err: unknown) {
       console.error('[AVENIR ARENA] Comment like write failed, reverting:', err);
-      // Revert optimistic update on failure
+      // Revert optimistic update on failure and present clear feedback
       setIsLiked(prevLiked);
       setLikeCount(prevCount);
+      onLikeChange?.(comment.id, prevLiked, prevCount);
+      setLikeError('Failed to like. Retry.');
+      setTimeout(() => setLikeError(null), 3000);
     } finally {
+      isLikingRef.current = false;
       setIsLiking(false);
     }
   };
@@ -235,12 +271,13 @@ function CommentItem({ comment, postId, onDelete, canDelete }: CommentItemProps)
           type="button"
           onClick={handleToggleLike}
           disabled={isLiking}
-          className={`p-1 rounded-full transition-transform transform active:scale-125 ${
+          className={`p-1 rounded-full transition-transform transform active:scale-125 disabled:opacity-50 ${
             isLiked
               ? 'text-red-400 hover:text-red-300'
               : 'text-muted hover:text-ivory'
           }`}
-          title={isLiked ? 'Unlike comment' : 'Like comment'}
+          title={likeError ? likeError : isLiked ? 'Unlike comment' : 'Like comment'}
+          aria-label={isLiked ? 'Unlike comment' : 'Like comment'}
         >
           <Heart
             className={`w-3.5 h-3.5 transition-colors ${
@@ -255,6 +292,11 @@ function CommentItem({ comment, postId, onDelete, canDelete }: CommentItemProps)
             }`}
           >
             {likeCount}
+          </span>
+        )}
+        {likeError && (
+          <span className="text-[9px] font-mono text-red-400 animate-fade-in text-center leading-none mt-0.5">
+            !
           </span>
         )}
       </div>
@@ -423,6 +465,13 @@ export function PostCommentSection({
     }
   };
 
+  // Immediate synchronous optimistic update to parent comments array
+  const handleCommentLikeChange = (commentId: string, _newLiked: boolean, newCount: number) => {
+    setComments((prev) =>
+      prev.map((c) => (c.id === commentId ? { ...c, likeCount: newCount } : c))
+    );
+  };
+
   // 4. Deterministic Comment Ranking:
   // Top: higher likeCount first; if equal, newer timestamp first.
   // Newest: strictly timestamp descending.
@@ -555,6 +604,7 @@ export function PostCommentSection({
                 postId={postId}
                 onDelete={handleDeleteComment}
                 canDelete={Boolean(canDelete)}
+                onLikeChange={handleCommentLikeChange}
               />
             );
           })}
