@@ -366,6 +366,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     traceEngine.setActiveStudent(user.uid);
     setIsAuthModalOpen(false);
     setError(null);
+    setCurrentUser(user);
+    try {
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+    } catch {
+      // Ignore storage error
+    }
 
     try {
       const userRef = doc(db, 'users', user.uid);
@@ -612,16 +618,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (popupErr: unknown) {
       console.error('[AVENIR ARENA AUTH] Firebase signInWithPopup error:', popupErr);
       const err = popupErr as { code?: string; message?: string };
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'your deployment domain';
+
       if (err?.code === 'auth/popup-closed-by-user') {
-        setError('Sign-in cancelled. Please try again when ready.');
+        setError('Google sign-in popup was closed before completing. Please click below to try again.');
       } else if (err?.code === 'auth/popup-blocked') {
-        setError('Authentication popup was blocked by your browser. Please allow popups for this site.');
+        setError('Google sign-in popup was blocked by your browser. Please allow popups for this site and try again.');
       } else if (err?.code === 'auth/cancelled-popup-request') {
         // Ignored: superseded by concurrent request
       } else if (err?.code === 'auth/network-request-failed') {
         setError('Network error during authentication. Please check your internet connection.');
       } else if (err?.code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for Google Sign-In. Please add this deployment domain to Firebase Console -> Authentication -> Settings -> Authorized Domains.');
+        setError(`Domain "${currentHost}" is not authorized for Google Sign-In in Firebase. Please add "${currentHost}" to Firebase Console -> Authentication -> Settings -> Authorized Domains.`);
+      } else if (err?.code === 'auth/operation-not-allowed') {
+        setError('Google sign-in provider is disabled in Firebase Console. Please enable Google in Firebase Console -> Authentication -> Sign-in method.');
       } else {
         setError(err?.message || 'Failed to sign in with Google. Please try again.');
       }
