@@ -49,7 +49,7 @@ const YEAR_OF_STUDY_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year'] a
 const BATCH_COHORT_PRESETS = ['2025-2029', '2026-2030', '2027-2031', '2028-2032'] as const;
 
 export function OnboardingModal() {
-  const { currentUser, isOnboardingRequired, needsRegistration, saveUserProfile } = useAuth();
+  const { currentUser, userProfile, isOnboardingRequired, needsRegistration, saveUserProfile } = useAuth();
   const { navigate } = useRouter();
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -194,7 +194,7 @@ export function OnboardingModal() {
     let isMounted = true;
     const timer = setTimeout(async () => {
       try {
-        const isUnique = await checkUsernameUnique(trimmed);
+        const isUnique = await checkUsernameUnique(trimmed, currentUser?.uid, currentUser?.email);
         if (!isMounted) return;
         setIsCheckingUsername(false);
         if (isUnique) {
@@ -293,6 +293,7 @@ export function OnboardingModal() {
       );
 
       // 1. Critical Firestore Data Upsert with { merge: true } using targetUid guarded by a 5000ms timeout
+      const existingXP = Number(userProfile?.academicXP ?? userProfile?.xp ?? 0);
       const userRef = doc(db, 'users', targetUid);
       await Promise.race([
         setDoc(
@@ -301,8 +302,8 @@ export function OnboardingModal() {
             campus: selectedCampus,
             yearOfStudy: yearOfStudy,
             batchCohort: batchCohort.trim(),
-            academicXP: 0,
-            xp: 0,
+            academicXP: existingXP,
+            xp: existingXP,
             isRegistered: true,
             // Sync full cadet profile attributes for AuthContext and Leaderboard
             username: username.trim(),

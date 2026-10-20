@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'siddharthsharma2649@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // ── USERS COLLECTION ──────────────────────────────────────────
+    // Stores canonical student profiles keyed by Firebase Auth UID
+    match /users/{userId} {
+      // Authenticated cadets can search and view profiles (for Leaderboard and Global Search)
+      allow read: if isAuthenticated();
+
+      // Only the authenticated user can create their own profile document
+      allow create: if isOwner(userId)
+                    && request.resource.data.uid == userId
+                    && (request.resource.data.role == 'cadet' || isAdmin());
+
+      // Only the profile owner or admin can update the document
+      // Normal cadets cannot elevate their own role to 'admin'
+      allow update: if (isOwner(userId) && (
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) ||
+                        isAdmin()
+                      )) || isAdmin();
+
+      // Only the owner or admin can delete their profile
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // ── COMMUNITY MESSAGES & LIVE TRANSMISSIONS ──────────────────
+    match /community_messages/{messageId} {
+      // Authenticated users can read live transmissions
+      allow read: if isAuthenticated();
+
+      // Authenticated users can only send transmissions under their own verified UID
+      allow create: if isAuthenticated()
+                    && request.resource.data.senderUid == request.auth.uid
+                    && request.resource.data.content is string
+                    && request.resource.data.content.size() > 0
+                    && request.resource.data.content.size() <= 1000;
+
+      // Cadets can toggle reactions; authors or admins can delete transmissions
+      allow update: if isAuthenticated()
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
+
+      allow delete: if isAuthenticated() && (resource.data.senderUid == request.auth.uid || isAdmin());
+    }
+
+    // ── ONLINE PRESENCE ──────────────────────────────────────────
+    match /presence/{userId} {
+      // Authenticated users can read online status of peers
+      allow read: if isAuthenticated();
+
+      // Users can only update their own heartbeat presence record
+      allow write: if isOwner(userId);
+    }
+
+    // ── QUIZZES & CURRICULUM ──────────────────────────────────────
+    match /quizzes/{quizId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── DEFAULT DENY ─────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -13,7 +13,7 @@ import {
   KeyRound,
   ShieldAlert,
 } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, ADMIN_EMAIL } from '@/context/AuthContext';
 import { Logo } from './Logo';
 
 export function LandingAuthScreen() {
@@ -28,12 +28,15 @@ export function LandingAuthScreen() {
     setAdminError('');
 
     // Strict credential validation per architecture requirements
+    const targetAdmin = (import.meta.env.VITE_ADMIN_EMAIL || ADMIN_EMAIL).toLowerCase();
+    const targetPass = import.meta.env.VITE_ADMIN_PASSWORD || '12345678';
+
     if (
-      adminEmail.trim().toLowerCase() === 'siddharthsharma2649@gmail.com' &&
-      adminPassword === '12345678'
+      adminEmail.trim().toLowerCase() === targetAdmin &&
+      adminPassword === targetPass
     ) {
       sessionStorage.setItem('avenir_admin_session', 'true');
-      sessionStorage.setItem('avenir_admin_email', 'siddharthsharma2649@gmail.com');
+      sessionStorage.setItem('avenir_admin_email', targetAdmin);
       setShowAdminModal(false);
       window.location.hash = '/admin';
     } else {

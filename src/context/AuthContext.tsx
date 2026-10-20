@@ -13,7 +13,7 @@ import {
 } from 'firebase/auth';
 import { db, auth, googleProvider } from '@/firebase';
 
-export const ADMIN_EMAIL = 'siddharthsharma2649@gmail.com';
+export const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'siddharthsharma2649@gmail.com';
 
 export interface User {
   uid: string;
@@ -104,16 +104,19 @@ export const TAKEN_USERNAMES = [
 /**
  * Real-time username uniqueness validation against reserved callsigns & Firestore user collection
  */
-export async function checkUsernameUnique(username: string, currentUid?: string): Promise<boolean> {
+export async function checkUsernameUnique(username: string, currentUid?: string, currentEmail?: string): Promise<boolean> {
   await new Promise((resolve) => setTimeout(resolve, 200));
   const normalized = username.trim().toLowerCase();
   if (TAKEN_USERNAMES.includes(normalized)) return false;
   
   try {
     const allUsers = await firestoreService.getAllUsers();
-    const match = allUsers.find(
-      (u) => u.username.toLowerCase() === normalized && u.uid !== currentUid
-    );
+    const match = allUsers.find((u) => {
+      if (u.username.toLowerCase() !== normalized) return false;
+      if (currentUid && u.uid === currentUid) return false;
+      if (currentEmail && u.email && u.email.toLowerCase() === currentEmail.toLowerCase()) return false;
+      return true;
+    });
     return !match;
   } catch {
     return true;
@@ -400,6 +403,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Canonical Identity Lookup: Check if user already has an existing profile by normalized email
+      const normEmail = (user.email || '').trim().toLowerCase();
+      if ((!docExists || !docData || !(docData.isRegistered || docData.isSetupComplete || docData.username)) && normEmail) {
+        try {
+          const localUsers = JSON.parse(localStorage.getItem('avenir_firestore_users_v1') || '{}') as Record<string, FirestoreUserDocData>;
+          const legacyMatch = Object.values(localUsers).find(
+            (u) => (u.email || '').trim().toLowerCase() === normEmail &&
+                   (u.isRegistered || u.isSetupComplete || u.username)
+          );
+          if (legacyMatch) {
+            console.log('[AVENIR ARENA AUTH] Reconciling existing profile for email:', normEmail);
+            docExists = true;
+            docData = {
+              uid: user.uid,
+              email: user.email,
+              username: legacyMatch.username || user.displayName,
+              firstName: legacyMatch.firstName || '',
+              lastName: legacyMatch.lastName || '',
+              avatarUrl: legacyMatch.avatarUrl || user.photoURL,
+              campus: legacyMatch.campus || 'MSOT Ghaziabad',
+              year: legacyMatch.year || '1st Year',
+              batch: legacyMatch.batch || '2025-2029',
+              bio: legacyMatch.bio || 'Cadet in AVENIR ARENA.',
+              xp: Number(legacyMatch.academicXP ?? legacyMatch.xp ?? 0),
+              academicXP: Number(legacyMatch.academicXP ?? legacyMatch.xp ?? 0),
+              gamesPlayed: Number(legacyMatch.gamesPlayed ?? 0),
+              infiniteTraceStreak: Number(legacyMatch.infiniteTraceStreak ?? 0),
+              role: legacyMatch.role || 'cadet',
+              isRegistered: true,
+              isSetupComplete: true,
+              createdAt: legacyMatch.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            // Migrate document to authoritative user.uid in Firestore in background
+            setDoc(userRef, docData, { merge: true }).catch(() => {});
+
+            // Clean up orphaned legacy ID from localStorage cache
+            if (legacyMatch.uid && legacyMatch.uid !== user.uid) {
+              delete localUsers[legacyMatch.uid];
+              localStorage.setItem('avenir_firestore_users_v1', JSON.stringify(localUsers));
+            }
+          }
+        } catch (cacheErr) {
+          console.warn('[AVENIR ARENA AUTH] Legacy profile lookup error:', cacheErr);
+        }
+      }
+
+      // Reconcile and preserve max XP & stats from any legacy records with same email
+      if (normEmail && docData) {
+        try {
+          const localUsers = JSON.parse(localStorage.getItem('avenir_firestore_users_v1') || '{}') as Record<string, FirestoreUserDocData>;
+          const legacyMatch = Object.values(localUsers).find(
+            (u) => u.uid !== user.uid && (u.email || '').trim().toLowerCase() === normEmail
+          );
+          if (legacyMatch) {
+            const legacyXP = Number(legacyMatch.academicXP ?? legacyMatch.xp ?? 0);
+            const currentXP = Number(docData.academicXP ?? docData.xp ?? 0);
+            if (legacyXP > currentXP) {
+              docData.academicXP = legacyXP;
+              docData.xp = legacyXP;
+            }
+            if ((legacyMatch.gamesPlayed || 0) > (docData.gamesPlayed || 0)) {
+              docData.gamesPlayed = legacyMatch.gamesPlayed;
+            }
+            if ((legacyMatch.infiniteTraceStreak || 0) > (docData.infiniteTraceStreak || 0)) {
+              docData.infiniteTraceStreak = legacyMatch.infiniteTraceStreak;
+            }
+            if (legacyMatch.uid) {
+              delete localUsers[legacyMatch.uid];
+              localStorage.setItem('avenir_firestore_users_v1', JSON.stringify(localUsers));
+            }
+          }
+        } catch {}
+      }
+
       const isCadetRegistered = Boolean(
         docExists &&
         docData &&
@@ -479,6 +558,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   };
+
+  // ── Global Online Presence Heartbeat ──
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const uid = currentUser.uid;
+    const presenceRef = doc(db, 'presence', uid);
+
+    const updatePresence = (status: 'online' | 'offline' = 'online') => {
+      setDoc(
+        presenceRef,
+        {
+          uid,
+          username: userProfile?.username || currentUser.displayName || 'Cadet',
+          avatarUrl: userProfile?.avatarUrl || currentUser.photoURL || '',
+          campus: userProfile?.campus || 'MSOT Ghaziabad',
+          lastSeen: Date.now(),
+          status,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).catch(() => {});
+    };
+
+    updatePresence('online');
+
+    const heartbeatTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        updatePresence('online');
+      }
+    }, 45000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined') {
+        updatePresence(document.visibilityState === 'visible' ? 'online' : 'offline');
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const handleUnload = () => {
+      updatePresence('offline');
+    };
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      clearInterval(heartbeatTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleUnload);
+      updatePresence('offline');
+    };
+  }, [currentUser?.uid, userProfile?.username, userProfile?.avatarUrl, userProfile?.campus]);
 
   // Restore authenticated session and listen to Firebase Auth in the background
   useEffect(() => {

@@ -247,10 +247,11 @@ export const firestoreService = {
         other: data.socialLinks?.other || existing.socialLinks?.other || '',
       },
       role:
-        data.email?.toLowerCase() === 'siddharthsharma2649@gmail.com' ||
-        existing.email?.toLowerCase() === 'siddharthsharma2649@gmail.com'
+        data.role ||
+        existing.role ||
+        (data.email?.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()
           ? 'admin'
-          : 'cadet',
+          : 'cadet'),
       isSetupComplete: data.isSetupComplete ?? existing.isSetupComplete ?? false,
       createdAt: existing.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -484,6 +485,74 @@ export async function fetchRealtimeCadets(): Promise<RealtimeCadet[]> {
     console.warn('[AVENIR ARENA] Fallback users warning:', err);
   }
 
-  return Array.from(cadetMap.values());
+  // 3. Reconcile and deduplicate: exactly one canonical profile per unique authenticated identity
+  const canonicalMap = new Map<string, RealtimeCadet>();
+  const emailToUidMap = new Map<string, string>(); // normalized email -> canonical uid
+  const legacyUidsToPurge: string[] = [];
+
+  cadetMap.forEach((cadet, rawUid) => {
+    const normEmail = (cadet.email || '').trim().toLowerCase();
+    const isLegacyId = rawUid.startsWith('google-');
+
+    if (normEmail) {
+      if (emailToUidMap.has(normEmail)) {
+        const existingUid = emailToUidMap.get(normEmail)!;
+        const existingCadet = canonicalMap.get(existingUid)!;
+        const existingIsLegacy = existingUid.startsWith('google-');
+
+        if (existingIsLegacy && !isLegacyId) {
+          // Promote the canonical Firebase UID, merge legacy progress
+          cadet.academicXP = Math.max(cadet.academicXP, existingCadet.academicXP);
+          cadet.xp = Math.max(cadet.xp, existingCadet.xp);
+          cadet.gamesPlayed = Math.max(cadet.gamesPlayed, existingCadet.gamesPlayed);
+          cadet.infiniteTraceStreak = Math.max(cadet.infiniteTraceStreak, existingCadet.infiniteTraceStreak);
+          if ((!cadet.username || cadet.username.startsWith('Cadet-')) && existingCadet.username) {
+            cadet.username = existingCadet.username;
+            cadet.displayName = existingCadet.displayName;
+          }
+
+          canonicalMap.delete(existingUid);
+          canonicalMap.set(cadet.uid, cadet);
+          emailToUidMap.set(normEmail, cadet.uid);
+          legacyUidsToPurge.push(existingUid);
+        } else {
+          // Merge current progress into existing canonical record
+          existingCadet.academicXP = Math.max(existingCadet.academicXP, cadet.academicXP);
+          existingCadet.xp = Math.max(existingCadet.xp, cadet.xp);
+          existingCadet.gamesPlayed = Math.max(existingCadet.gamesPlayed, cadet.gamesPlayed);
+          existingCadet.infiniteTraceStreak = Math.max(existingCadet.infiniteTraceStreak, cadet.infiniteTraceStreak);
+          if (isLegacyId) {
+            legacyUidsToPurge.push(rawUid);
+          }
+        }
+        return;
+      }
+
+      emailToUidMap.set(normEmail, cadet.uid);
+    }
+
+    canonicalMap.set(cadet.uid, cadet);
+  });
+
+  // Purge reconciled legacy records from local cache
+  if (legacyUidsToPurge.length > 0) {
+    try {
+      const stored = getStoredUsers();
+      let changed = false;
+      legacyUidsToPurge.forEach((id) => {
+        if (stored[id]) {
+          delete stored[id];
+          changed = true;
+        }
+      });
+      if (changed) {
+        saveStoredUsers(stored);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  return Array.from(canonicalMap.values());
 }
 

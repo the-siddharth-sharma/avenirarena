@@ -58,11 +58,21 @@ export function SearchPage({ navigate }: SearchPageProps) {
     const users = await fetchRealtimeCadets();
     const term = queryTerm.trim().toLowerCase();
 
-    // Client-side filtering for partial matches
+    // Client-side filtering for partial matches & strict deduplication safeguard
+    const seenEmails = new Set<string>();
+    const seenUids = new Set<string>();
+
     return users.filter((u) => {
       if (campus !== 'all' && u.campus?.toLowerCase() !== campus.toLowerCase()) {
         return false;
       }
+
+      if (u.uid && seenUids.has(u.uid)) return false;
+      if (u.uid) seenUids.add(u.uid);
+
+      const normEmail = (u.email || '').trim().toLowerCase();
+      if (normEmail && seenEmails.has(normEmail)) return false;
+      if (normEmail) seenEmails.add(normEmail);
 
       if (!term) return true;
 
