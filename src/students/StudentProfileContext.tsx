@@ -17,7 +17,7 @@ import { badgeDefinitions, getPeriodKey, getWeekKey, questDefinitions } from '@/
 import { calculateDailyQuizScore, getAcademicDate } from '@/engine/xpRules';
 import { traceEngine } from '@/engine/infiniteTrace';
 import { useAuth } from '@/context/AuthContext';
-import { firestoreService } from '@/firebaseConfig';
+import { firestoreService, fetchRealtimeCadets } from '@/firebaseConfig';
 
 const SELECTED_STUDENT_KEY = 'avenir-selected-student';
 const STUDENT_PROFILES_KEY = 'avenir-student-profiles';
@@ -76,6 +76,7 @@ interface StudentProfileContextValue {
   submitDailyQuiz: (quizId: string, questions: QuizQuestion[], answers: number[]) => QuizSubmissionResult;
   submitGame: (gameId: LearningGameId, answer: number) => GameSubmissionResult;
   submitCodeRunnerLevel?: (levelId: string, xp: number) => boolean;
+  updateUserXP: (delta: number) => Promise<void>;
 }
 
 const StudentProfileContext = createContext<StudentProfileContextValue | undefined>(undefined);
@@ -178,7 +179,7 @@ function applyDerivedRewards(studentId: string, state: StudentProgress, now: Dat
 function getInitialSelectedStudentId(): string {
   if (typeof window === 'undefined') return '';
   try {
-    const rawUser = localStorage.getItem('avenir-google-user-v1');
+    const rawUser = localStorage.getItem('avenir-auth-user-v1');
     if (rawUser) {
       const u = JSON.parse(rawUser);
       return u.uid || '';
@@ -190,11 +191,14 @@ function getInitialSelectedStudentId(): string {
 function getInitialStudents(): StudentProfile[] {
   if (typeof window === 'undefined') return [];
   try {
-    const rawUser = localStorage.getItem('avenir-google-user-v1');
+    const rawUser = localStorage.getItem('avenir-auth-user-v1');
     const rawProfile = localStorage.getItem('avenir-user-profile-v1');
     if (rawUser) {
       const u = JSON.parse(rawUser);
-      const profile = rawProfile ? JSON.parse(rawProfile) : null;
+      let profile = rawProfile ? JSON.parse(rawProfile) : null;
+      if (profile && profile.uid !== u.uid) {
+        profile = null;
+      }
       const name = profile?.username || profile?.displayName || u.displayName || 'Cadet Operative';
       const realXP = profile?.academicXP ?? profile?.xp ?? 0;
       const initialStudent: StudentProfile = {
@@ -235,21 +239,17 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
 
     async function syncRealProfiles() {
       try {
-        const firestoreUsers = await firestoreService.getAllUsers();
+        const firestoreUsers = await fetchRealtimeCadets();
         if (!isMounted) return;
 
         const profiles: StudentProfile[] = firestoreUsers.map((u) => {
-          const name =
-            u.firstName && u.lastName
-              ? `${u.firstName} ${u.lastName}`
-              : u.username || u.email.split('@')[0] || 'Cadet';
-
-          const userTotalXP = u.xp || 0;
+          const name = u.displayName || u.username || 'Cadet';
+          const userTotalXP = Number(u.academicXP ?? u.xp ?? 0);
           return {
             id: u.uid,
             studentId: u.uid.replace('google-', 'G-').slice(0, 10).toUpperCase(),
             displayName: name,
-            email: u.email,
+            email: u.email || '',
             avatarInitials: getInitials(name),
             avatarColor: 'from-gold-500 to-gold-700',
             level: Math.max(1, Math.floor(Math.sqrt(userTotalXP / 50)) + 1),
@@ -263,16 +263,16 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
             batch: u.batch || 'Batch 2026',
             campus: u.campus || 'MSOT Ghaziabad',
             joinedDate: u.createdAt || new Date().toISOString(),
-            profileCompletion: u.isSetupComplete ? 100 : 50,
+            profileCompletion: 100,
           };
         });
 
-        // Ensure current real user is included with strictly accurate real XP (0 for new user)
+        // Ensure current real user is included with strictly accurate real XP
         if (currentUser) {
           const userIndex = profiles.findIndex((p) => p.id === currentUser.uid);
           const currentName =
             userProfile?.username || currentUser.displayName || 'Cadet Operative';
-          const realXP = userProfile?.xp ?? 0;
+          const realXP = Number(userProfile?.academicXP ?? userProfile?.xp ?? 0);
           const currentRealProfile: StudentProfile = {
             id: currentUser.uid,
             studentId: currentUser.uid.replace('google-', 'G-').slice(0, 10).toUpperCase(),
@@ -505,7 +505,27 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
     return { attempt, completion, awarded: gameXp > 0 };
   };
 
-  return <StudentProfileContext.Provider value={{ students, selectedStudent, selectStudent, updateSelectedStudent, quizAttempts: selectedProgress.attempts, xpTransactions: selectedProgress.transactions, gameAttempts: selectedProgress.gameAttempts, gameCompletions: selectedProgress.gameCompletions, earnedBadges: selectedProgress.earnedBadges, questCompletions: selectedProgress.questCompletions, submitDailyQuiz, submitGame }}>{children}</StudentProfileContext.Provider>;
+  return (
+    <StudentProfileContext.Provider
+      value={{
+        students,
+        selectedStudent,
+        selectStudent,
+        updateSelectedStudent,
+        quizAttempts: selectedProgress.attempts,
+        xpTransactions: selectedProgress.transactions,
+        gameAttempts: selectedProgress.gameAttempts,
+        gameCompletions: selectedProgress.gameCompletions,
+        earnedBadges: selectedProgress.earnedBadges,
+        questCompletions: selectedProgress.questCompletions,
+        submitDailyQuiz,
+        submitGame,
+        updateUserXP,
+      }}
+    >
+      {children}
+    </StudentProfileContext.Provider>
+  );
 }
 
 export function useStudentProfiles(): StudentProfileContextValue {

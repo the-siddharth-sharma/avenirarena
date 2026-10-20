@@ -17,6 +17,7 @@ import { Card } from '@/components/Card';
 import { PageHeader } from '@/components/PageHeader';
 import { db } from '@/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { firestoreService, fetchRealtimeCadets } from '@/firebaseConfig';
 
 export interface FirestoreCadet {
   uid: string;
@@ -50,55 +51,28 @@ export function SearchPage({ navigate }: SearchPageProps) {
   const [hasQueried, setHasQueried] = useState(false);
 
   /**
-   * Search users directly from Firebase Firestore users collection
+   * Search users directly using unified fetchRealtimeCadets
    * Performs client-side partial matching for callsigns, names, and emails
    */
   const searchUsers = async (queryTerm: string, campus: string = 'all'): Promise<FirestoreCadet[]> => {
-    try {
-      const usersRef = collection(db, 'users');
-      const snapshot = await getDocs(usersRef);
+    const users = await fetchRealtimeCadets();
+    const term = queryTerm.trim().toLowerCase();
 
-      const users: FirestoreCadet[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        const effectiveXP = Number(data.academicXP ?? data.xp ?? 0);
-        const name =
-          data.displayName ||
-          data.username ||
-          (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : `Cadet-${docSnap.id.slice(0, 4)}`);
+    // Client-side filtering for partial matches
+    return users.filter((u) => {
+      if (campus !== 'all' && u.campus?.toLowerCase() !== campus.toLowerCase()) {
+        return false;
+      }
 
-        return {
-          uid: docSnap.id,
-          displayName: name,
-          photoURL: data.photoURL || data.avatarUrl || '',
-          email: data.email || '',
-          campus: data.campus || 'MSOT Ghaziabad',
-          academicXP: effectiveXP,
-          xp: effectiveXP,
-          username: data.username || '',
-          role: data.role || 'cadet',
-        };
-      });
+      if (!term) return true;
 
-      const term = queryTerm.trim().toLowerCase();
-
-      // Client-side filtering for partial matches
-      return users.filter((u) => {
-        if (campus !== 'all' && u.campus?.toLowerCase() !== campus.toLowerCase()) {
-          return false;
-        }
-
-        if (!term) return true;
-
-        return (
-          u.displayName.toLowerCase().includes(term) ||
-          (u.email || '').toLowerCase().includes(term) ||
-          (u.username || '').toLowerCase().includes(term)
-        );
-      });
-    } catch (err) {
-      console.error('[AVENIR ARENA SEARCH] Failed to search users from Firestore:', err);
-      return [];
-    }
+      return (
+        u.displayName.toLowerCase().includes(term) ||
+        (u.email || '').toLowerCase().includes(term) ||
+        (u.username || '').toLowerCase().includes(term) ||
+        (u.campus || '').toLowerCase().includes(term)
+      );
+    });
   };
 
   // Debounced search query against Firestore (300ms delay)

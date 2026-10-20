@@ -35,9 +35,10 @@ import {
   type ArenaEntry,
   type LeaderboardViewTab,
 } from '@/engine/competitiveArena';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
+import { fetchRealtimeCadets } from '@/firebaseConfig';
 
 const LEADERBOARD_CACHE_KEY = 'avenir_leaderboard_cache_v1';
 
@@ -106,7 +107,7 @@ export function LeaderboardPage() {
   // Rollover simulation message/modal state
   const [rolloverNotice, setRolloverNotice] = useState<string | null>(null);
 
-  // Dynamic Firestore Leaderboard State (SWR cache for 0ms reload latency)
+  // Dynamic Real-Time Leaderboard State (SWR cache for 0ms reload latency)
   const [firestoreEntries, setFirestoreEntries] = useState<ArenaEntry[]>(getInitialLeaderboardEntries);
   const [isLoading, setIsLoading] = useState<boolean>(() => getInitialLeaderboardEntries().length === 0);
 
@@ -117,121 +118,195 @@ export function LeaderboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-<<<<<<< HEAD
-  // Build reactive, live standings sorted by active category tab
-  const { entries, currentStudentEntry, studentPref } = buildCompetitiveStandings(
-    students,
-    selectedStudent,
-    xpTransactions,
-    {
-      scope,
-      batchFilter,
-      campusFilter,
-      leagueFilter,
-      metricTab: activeTab,
-=======
   // Fetch top 10 users from Firestore ordered by academicXP descending
+  // Real-time synchronization of users from Firestore & Global Search source, ranked by XP & Hardwork
   useEffect(() => {
     let isMounted = true;
 
-    async function fetchTop10FromFirestore() {
-      if (firestoreEntries.length === 0) {
-        setIsLoading(true);
-      }
+    async function syncLeaderboard(cloudDocs?: any[]) {
       try {
-        const usersRef = collection(db, 'users');
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Firestore leaderboard timeout')), 2500)
-        );
+        const cadetMap = new Map<string, any>();
 
-        // Fetch top 10 users strictly ordered by academicXP descending
-        let q = query(usersRef, orderBy('academicXP', 'desc'), limit(10));
-        let snapshot = await Promise.race([getDocs(q), timeoutPromise]);
+        // 1. Process cloud docs if provided by onSnapshot
+        if (cloudDocs && cloudDocs.length > 0) {
+          cloudDocs.forEach((docSnap) => {
+            const data = typeof docSnap.data === 'function' ? docSnap.data() : docSnap;
+            const uid = docSnap.id || data.uid;
+            if (!uid) return;
+            const effectiveXP = Number(data.academicXP ?? data.xp ?? 0);
+            const name =
+              data.username ||
+              data.displayName ||
+              (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : `Cadet-${uid.slice(0, 4)}`);
 
-        // Resilient fallback: If no records match academicXP, query with xp
-        if (snapshot.empty) {
-          q = query(usersRef, orderBy('xp', 'desc'), limit(10));
-          snapshot = await Promise.race([getDocs(q), timeoutPromise]);
-        }
-
-        if (isMounted) {
-          if (!snapshot.empty) {
-            const mapped: ArenaEntry[] = snapshot.docs.map((docSnap, index) => {
-              const data = docSnap.data();
-              const effectiveXP = Number(data.academicXP ?? data.xp ?? 0);
-              const displayName =
-                data.displayName ||
-                data.username ||
-                (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : `Cadet-${docSnap.id.slice(0, 4)}`);
-
-              const initials =
-                displayName
-                  .split(' ')
-                  .map((n: string) => n[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase() || 'AA';
-
-              const tier: LeagueTier =
-                effectiveXP >= 5000
-                  ? 'diamond'
-                  : effectiveXP >= 2500
-                  ? 'platinum'
-                  : effectiveXP >= 1000
-                  ? 'gold'
-                  : effectiveXP >= 400
-                  ? 'silver'
-                  : 'bronze';
-
-              const rank = index + 1;
-              const isUser = Boolean(
-                currentUser &&
-                  (docSnap.id === currentUser.uid || data.uid === currentUser.uid || data.email === currentUser.email)
-              );
-
-              return {
-                id: docSnap.id,
-                rank,
-                rankChange: 0,
-                displayName,
-                avatarInitials: initials,
-                avatarColor: '#D4AF37',
-                campus: data.campus || 'MSOT Ghaziabad',
-                batch: data.batch || '2025-2029',
-                level: Math.max(1, Math.floor(effectiveXP / 100)),
-                leagueTier: tier,
-                weeklyXP: effectiveXP,
-                totalXP: effectiveXP,
-                isCurrentUser: isUser,
-                isDemo: false,
-                zone: rank <= 3 ? 'promotion' : rank >= 8 ? 'relegation' : 'safe',
-                zoneLabel: rank <= 3 ? 'Promotion Zone' : rank >= 8 ? 'Relegation Risk' : 'Safe Tier',
-              };
+            cadetMap.set(uid, {
+              id: uid,
+              uid,
+              displayName: name,
+              photoURL: data.photoURL || data.avatarUrl || '',
+              avatarUrl: data.avatarUrl || data.photoURL || '',
+              campus: data.campus || 'MSOT Ghaziabad',
+              batch: data.batch || data.batchCohort || '2025-2029',
+              academicXP: effectiveXP,
+              xp: effectiveXP,
+              gamesPlayed: Number(data.gamesPlayed || 0),
+              streak: Number(data.infiniteTraceStreak || data.streak || 0),
+              role: data.role || 'cadet',
             });
-            setFirestoreEntries(mapped);
-            try {
-              sessionStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(mapped));
-            } catch {}
-          } else if (firestoreEntries.length === 0) {
-            setFirestoreEntries([]);
-          }
+          });
         }
-      } catch (err) {
-        console.warn('[AVENIR ARENA LEADERBOARD] Using cached leaderboard data:', err);
-      } finally {
+
+        // 2. Supplement from fetchRealtimeCadets() to ensure 100% parity with Global Search
+        const searchCadets = await fetchRealtimeCadets();
+        searchCadets.forEach((c) => {
+          if (!cadetMap.has(c.uid)) {
+            cadetMap.set(c.uid, {
+              id: c.uid,
+              uid: c.uid,
+              displayName: c.displayName,
+              photoURL: c.avatarUrl || c.photoURL || '',
+              avatarUrl: c.avatarUrl || '',
+              campus: c.campus || 'MSOT Ghaziabad',
+              batch: c.batch || '2025-2029',
+              academicXP: c.academicXP,
+              xp: c.xp,
+              gamesPlayed: c.gamesPlayed,
+              streak: c.infiniteTraceStreak,
+              role: c.role || 'cadet',
+            });
+          }
+        });
+
+        // 3. Ensure currently authenticated user is included with latest profile
+        if (currentUser) {
+          const currentXP = Number(userProfile?.academicXP ?? userProfile?.xp ?? 0);
+          const currentName = userProfile?.username || currentUser.displayName || 'Cadet Operative';
+          const existing = cadetMap.get(currentUser.uid) || {};
+          cadetMap.set(currentUser.uid, {
+            ...existing,
+            id: currentUser.uid,
+            uid: currentUser.uid,
+            displayName: currentName,
+            photoURL: userProfile?.avatarUrl || currentUser.photoURL || '',
+            avatarUrl: userProfile?.avatarUrl || currentUser.photoURL || '',
+            campus: userProfile?.campus || existing.campus || 'MSOT Ghaziabad',
+            batch: userProfile?.batch || existing.batch || '2025-2029',
+            academicXP: currentXP,
+            xp: currentXP,
+            gamesPlayed: Number(userProfile?.gamesPlayed ?? existing.gamesPlayed ?? 0),
+            streak: Number(userProfile?.infiniteTraceStreak ?? existing.streak ?? 0),
+            role: userProfile?.role || 'cadet',
+          });
+        }
+
+        const allUsers = Array.from(cadetMap.values());
+
+        // 4. Rank strictly per XP and Hardwork (Primary: XP, Secondary: Games/Quests completed, Tertiary: Streak)
+        allUsers.sort((a, b) => {
+          const xpA = Number(a.academicXP ?? a.xp ?? 0);
+          const xpB = Number(b.academicXP ?? b.xp ?? 0);
+          if (xpB !== xpA) {
+            return xpB - xpA;
+          }
+          const gamesA = Number(a.gamesPlayed ?? 0);
+          const gamesB = Number(b.gamesPlayed ?? 0);
+          if (gamesB !== gamesA) {
+            return gamesB - gamesA;
+          }
+          const streakA = Number(a.streak ?? 0);
+          const streakB = Number(b.streak ?? 0);
+          return streakB - streakA;
+        });
+
+        // 5. Map to ArenaEntry
+        const mapped: ArenaEntry[] = allUsers.map((cadet, index) => {
+          const rank = index + 1;
+          const effectiveXP = Number(cadet.academicXP ?? cadet.xp ?? 0);
+          const initials =
+            cadet.displayName
+              .split(' ')
+              .map((n: string) => n[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase() || 'AA';
+
+          const tier: LeagueTier =
+            effectiveXP >= 5000
+              ? 'diamond'
+              : effectiveXP >= 2500
+              ? 'platinum'
+              : effectiveXP >= 1000
+              ? 'gold'
+              : effectiveXP >= 400
+              ? 'silver'
+              : 'bronze';
+
+          const isUser = Boolean(
+            currentUser &&
+              (cadet.uid === currentUser.uid || cadet.id === currentUser.uid || cadet.email === currentUser.email)
+          );
+
+          return {
+            id: cadet.uid || cadet.id,
+            rank,
+            rankChange: 0,
+            displayName: cadet.displayName,
+            avatarInitials: initials,
+            avatarColor: '#D4AF37',
+            campus: cadet.campus,
+            batch: cadet.batch,
+            level: Math.max(1, Math.floor(effectiveXP / 100) + 1),
+            leagueTier: tier,
+            weeklyXP: effectiveXP,
+            totalXP: effectiveXP,
+            isCurrentUser: isUser,
+            isDemo: false,
+            zone: rank <= 3 ? 'promotion' : rank >= 8 ? 'relegation' : 'safe',
+            zoneLabel: rank <= 3 ? 'Promotion Zone' : rank >= 8 ? 'Relegation Risk' : 'Safe Tier',
+            gamesPlayed: cadet.gamesPlayed,
+            streak: cadet.streak,
+          };
+        });
+
         if (isMounted) {
+          setFirestoreEntries(mapped);
+          try {
+            sessionStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(mapped));
+          } catch {}
           setIsLoading(false);
         }
+      } catch (err) {
+        console.warn('[AVENIR ARENA LEADERBOARD] Sync error:', err);
+        if (isMounted) setIsLoading(false);
       }
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
+
     }
 
-    fetchTop10FromFirestore();
+    // Initial load
+    syncLeaderboard();
+
+    // Real-time Firestore snapshot listener
+    let unsubscribe = () => {};
+    try {
+      const usersRef = collection(db, 'users');
+      unsubscribe = onSnapshot(
+        usersRef,
+        (snap) => {
+          syncLeaderboard(snap.docs);
+        },
+        (err) => {
+          console.warn('[AVENIR ARENA LEADERBOARD] onSnapshot listener warning:', err);
+        }
+      );
+    } catch (e) {
+      console.warn('[AVENIR ARENA LEADERBOARD] Failed to attach onSnapshot:', e);
+    }
 
     return () => {
       isMounted = false;
+      unsubscribe();
     };
-  }, [currentUser]);
+  }, [currentUser, userProfile]);
 
   // Determine user's tier based on live Academic XP
   const effectiveXP = userProfile?.academicXP ?? userProfile?.xp ?? 0;
@@ -438,41 +513,6 @@ export function LeaderboardPage() {
 
             {/* Position & Zone Status */}
             <div className="w-full sm:w-auto text-left sm:text-right border-t sm:border-t-0 pt-3 sm:pt-0 border-line">
-<<<<<<< HEAD
-              {currentStudentEntry ? (
-                <>
-                  <div className="flex sm:justify-end items-center gap-2">
-                    <span className="text-2xl font-display font-bold text-ivory">
-                      Rank #{currentStudentEntry.rank}
-                    </span>
-                    {renderRankChange(currentStudentEntry.rankChange ?? 0)}
-                  </div>
-                  <p className="text-xs font-mono text-gold-400 mt-0.5">
-                    {activeTab === 'consistent-player'
-                      ? `🔥 ${currentStudentEntry.streakDays ?? currentStudentEntry.streak ?? 0} Day Streak`
-                      : activeTab === 'learning-growth'
-                      ? `📈 +${currentStudentEntry.weeklyGrowthPct ?? 0}% Growth Rate`
-                      : scope === 'weekly'
-                      ? `${currentStudentEntry.weeklyXP} XP this week`
-                      : `${currentStudentEntry.totalXP.toLocaleString()} Lifetime XP`}
-                  </p>
-                  <div className="mt-2">
-                    <span
-                      className={`badge text-[11px] ${
-                        currentStudentEntry.zone === 'promotion'
-                          ? 'border border-gold-400/40 bg-gold-400/10 text-gold-400'
-                          : currentStudentEntry.zone === 'relegation'
-                          ? 'border border-crimson-400/40 bg-crimson-400/10 text-crimson-400'
-                          : 'border border-line bg-elevated text-muted'
-                      }`}
-                    >
-                      {currentStudentEntry.zone === 'promotion' && '↑ '}
-                      {currentStudentEntry.zone === 'relegation' && '↓ '}
-                      {currentStudentEntry.zoneLabel}
-                    </span>
-                  </div>
-                </>
-=======
               {filteredEntries.find((e) => e.isCurrentUser) || currentStudentEntry ? (
                 (() => {
                   const myEntry = filteredEntries.find((e) => e.isCurrentUser) || currentStudentEntry;
@@ -506,7 +546,6 @@ export function LeaderboardPage() {
                     </>
                   );
                 })()
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
               ) : (
                 <div className="text-sm text-muted">
                   <p>You are currently opted out of public rankings.</p>
@@ -672,206 +711,6 @@ export function LeaderboardPage() {
         </Card>
       )}
 
-<<<<<<< HEAD
-      {/* Metric Categories Switcher Tabs & Competitor Search */}
-      <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-md border border-line bg-graphite p-1 no-scrollbar">
-          <button
-            onClick={() => setActiveTab('overall')}
-            className={`tab-button flex items-center gap-2 text-xs font-semibold ${
-              activeTab === 'overall' ? 'tab-active' : 'tab-inactive'
-            }`}
-          >
-            <Trophy className="w-3.5 h-3.5 text-gold-400" />
-            <span>Overall XP Ranking</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('consistent-player')}
-            className={`tab-button flex items-center gap-2 text-xs font-semibold ${
-              activeTab === 'consistent-player' ? 'tab-active' : 'tab-inactive'
-            }`}
-          >
-            <Flame className="w-3.5 h-3.5 text-amber-400" />
-            <span>Consistent Player</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('learning-growth')}
-            className={`tab-button flex items-center gap-2 text-xs font-semibold ${
-              activeTab === 'learning-growth' ? 'tab-active' : 'tab-inactive'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Consistent Learning Growth</span>
-          </button>
-        </div>
-
-        {/* Competitor Search */}
-        <div className="relative min-w-[200px] max-w-xs">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search competitor by name/campus..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-graphite border border-line rounded-md pl-9 pr-3 py-1.5 text-xs text-ivory placeholder:text-muted/60 outline-none focus:border-gold-400 transition-colors"
-            aria-label="Search competitors"
-          />
-        </div>
-      </div>
-
-      {/* View Category Context Banner */}
-      <div className="mb-6 flex items-center justify-between gap-3 p-3 rounded-md bg-graphite border border-line text-xs">
-        <div className="flex items-center gap-2">
-          {activeTab === 'consistent-player' ? (
-            <>
-              <Flame className="w-4 h-4 text-amber-400 shrink-0" />
-              <div>
-                <span className="text-ivory font-medium">Consistent Player Board: </span>
-                <span className="text-muted">
-                  Recognizes habit constancy and daily study rhythm. Ranked by consecutive active study streak and daily completion history.
-                </span>
-              </div>
-            </>
-          ) : activeTab === 'learning-growth' ? (
-            <>
-              <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0" />
-              <div>
-                <span className="text-ivory font-medium">Consistent Learning Growth Board: </span>
-                <span className="text-muted">
-                  Celebrates learning velocity and academic acceleration. Ranked by XP progression rate (%) compared to previous cycle.
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <Trophy className="w-4 h-4 text-gold-400 shrink-0" />
-              <div>
-                <span className="text-ivory font-medium">Overall XP Board: </span>
-                <span className="text-muted">
-                  Global cohort standings based on total experience accumulated across quests, daily quizzes, and code challenges.
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-        <span className="text-[10px] font-mono text-muted uppercase hidden lg:inline-block shrink-0">
-          {displayedEntries.length} {displayedEntries.length === 1 ? 'competitor' : 'competitors'}
-        </span>
-      </div>
-
-      {/* Podium (Top 3) for Current View */}
-      {displayedEntries.length >= 3 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          {[1, 0, 2].map((podiumIdx) => {
-            const entry = displayedEntries[podiumIdx];
-            if (!entry) return null;
-            const isFirst = entry.rank === 1;
-            const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
-
-            return (
-              <Card
-                key={entry.id}
-                className={`text-center ${
-                  isFirst
-                    ? 'border-gold-400/40 bg-gradient-to-b from-gold-400/10 to-transparent sm:scale-105 z-10'
-                    : ''
-                }`}
-              >
-                <div className="flex justify-center mb-2.5">{rankIcon(entry.rank)}</div>
-
-                <div className="flex justify-center">
-                  <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="lg" />
-                </div>
-
-                <div className="mt-3 flex items-center justify-center gap-1.5">
-                  <p className="font-display font-semibold text-ivory truncate">{entry.displayName}</p>
-                  {entry.isCurrentUser && (
-                    <span className="badge bg-gold-400/20 text-gold-400 text-[9px]">You</span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-center gap-2 mt-1">
-                  <span
-                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                    style={{ backgroundColor: tierConfig.badgeBg, color: tierConfig.color }}
-                  >
-                    {tierConfig.name.split(' ')[0]}
-                  </span>
-                  <span className="text-xs text-muted">Lvl {entry.level}</span>
-                  {renderRankChange(entry.rankChange ?? 0)}
-                </div>
-
-                {/* Metric Display according to active view */}
-                <div className="mt-2.5">
-                  {activeTab === 'consistent-player' ? (
-                    <p className="text-xl font-mono font-bold text-amber-400 flex items-center justify-center gap-1">
-                      <Flame className="w-5 h-5" />
-                      {entry.streakDays ?? entry.streak ?? 0} Days
-                    </p>
-                  ) : activeTab === 'learning-growth' ? (
-                    <p className="text-xl font-mono font-bold text-emerald-400 flex items-center justify-center gap-1">
-                      <ArrowUpRight className="w-5 h-5" />
-                      +{entry.weeklyGrowthPct ?? 0}%
-                    </p>
-                  ) : (
-                    <p className="text-xl font-mono font-bold text-gold-400">
-                      {scope === 'weekly' ? `+${entry.weeklyXP} XP` : `${entry.totalXP.toLocaleString()} XP`}
-                    </p>
-                  )}
-                  <p className="text-[10px] text-muted uppercase tracking-wider mt-0.5">
-                    {activeTab === 'consistent-player'
-                      ? 'Active Study Streak'
-                      : activeTab === 'learning-growth'
-                      ? 'Knowledge Growth Rate'
-                      : scope === 'weekly'
-                      ? 'This Week'
-                      : 'Lifetime Total'}
-                  </p>
-                </div>
-
-                {/* Podium Title Badges */}
-                {entry.badges && entry.badges.length > 0 && (
-                  <div className="flex flex-wrap justify-center gap-1 mt-3">
-                    {entry.badges.map((b) => (
-                      <BadgeChip
-                        key={b.title}
-                        badge={b}
-                        isHighlighted={
-                          (activeTab === 'consistent-player' && b.title === 'Consistent Player') ||
-                          (activeTab === 'learning-growth' && b.title === 'Consistent Learning Growth')
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Full Standings Table */}
-      {displayedEntries.length > 0 ? (
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-line bg-elevated px-4 py-3 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted">
-            <div className="flex items-center gap-4">
-              <span className="w-12 text-center">Rank</span>
-              <span>Competitor & Title Badges</span>
-            </div>
-            <div className="flex items-center gap-6 sm:gap-12">
-              <span className="hidden md:inline">Tier & Zone</span>
-              <span className="w-28 text-right">
-                {activeTab === 'consistent-player'
-                  ? '🔥 Streak'
-                  : activeTab === 'learning-growth'
-                  ? '📈 Growth %'
-                  : scope === 'weekly'
-                  ? 'Weekly XP'
-                  : 'Total XP'}
-              </span>
-=======
       {/* Sleek Futuristic Loading State & Dynamic Firestore Standings */}
       {isLoading ? (
         <Card className="py-20 my-6 flex flex-col items-center justify-center text-center relative overflow-hidden border border-gold-400/30 bg-graphite/90 shadow-2xl">
@@ -880,7 +719,6 @@ export function LeaderboardPage() {
             <div className="w-16 h-16 rounded-full border-2 border-gold-400/20 border-t-gold-400 animate-spin shadow-lg shadow-gold-400/10" />
             <div className="absolute inset-0 flex items-center justify-center">
               <Trophy className="w-6 h-6 text-gold-400 animate-pulse" />
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
             </div>
           </div>
           <div className="flex items-center gap-2 text-gold-400 font-mono text-xs uppercase tracking-widest mb-1.5 font-semibold">
@@ -905,7 +743,6 @@ export function LeaderboardPage() {
                 const isFirst = entry.rank === 1;
                 const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
 
-<<<<<<< HEAD
           <div className="divide-y divide-line">
             {displayedEntries.map((entry) => {
               const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
@@ -1017,39 +854,6 @@ export function LeaderboardPage() {
                           </p>
                         </>
                       )}
-=======
-                return (
-                  <Card
-                    key={entry.id}
-                    className={`text-center ${
-                      isFirst
-                        ? 'border-gold-400/40 bg-gradient-to-b from-gold-400/10 to-transparent sm:scale-105 z-10'
-                        : ''
-                    }`}
-                  >
-                    <div className="flex justify-center mb-2.5">{rankIcon(entry.rank)}</div>
-
-                    <div className="flex justify-center">
-                      <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="lg" />
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-center gap-1.5">
-                      <p className="font-display font-semibold text-ivory truncate">{entry.displayName}</p>
-                      {entry.isCurrentUser && (
-                        <span className="badge bg-gold-400/20 text-gold-400 text-[9px]">You</span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-center gap-2 mt-1">
-                      <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                        style={{ backgroundColor: tierConfig.badgeBg, color: tierConfig.color }}
-                      >
-                        {tierConfig.name.split(' ')[0]}
-                      </span>
-                      <span className="text-xs text-muted">Lvl {entry.level}</span>
-                      {renderRankChange(entry.rankChange ?? 0)}
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
                     </div>
 
                     <p className="text-xl font-mono font-bold text-gold-400 mt-2.5">
@@ -1072,24 +876,6 @@ export function LeaderboardPage() {
                   <span className="w-12 text-center">Rank</span>
                   <span>Competitor</span>
                 </div>
-<<<<<<< HEAD
-              );
-            })}
-          </div>
-        </Card>
-      ) : (
-        <Card>
-          <EmptyState
-            title="No competitors found"
-            message={
-              searchQuery.trim()
-                ? `No students matching "${searchQuery}" found in the selected filter criteria.`
-                : 'No students match the selected batch or campus filter criteria.'
-            }
-            icon={<Trophy className="w-6 h-6 text-muted" />}
-          />
-        </Card>
-=======
                 <div className="flex items-center gap-6 sm:gap-12">
                   <span className="hidden md:inline">Tier & Zone</span>
                   <span className="w-24 text-right">Academic XP</span>
@@ -1132,7 +918,7 @@ export function LeaderboardPage() {
                             )}
                           </div>
                           <p className="text-xs text-muted truncate">
-                            Level {entry.level} • {entry.batch} • {entry.campus}
+                            Level {entry.level} • {(entry as any).gamesPlayed || 0} quests • {(entry as any).streak || 0}d streak • {entry.campus}
                           </p>
                         </div>
                       </div>
@@ -1185,7 +971,6 @@ export function LeaderboardPage() {
             </Card>
           )}
         </>
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
       )}
 
       {/* Title Badge System Legend Card */}

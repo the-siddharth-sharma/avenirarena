@@ -31,7 +31,6 @@ import {
   Zap,
 } from 'lucide-react';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
-<<<<<<< HEAD
 import { DSA_ESTATE_FLOORS, WEBDEV_ESTATE_FLOORS } from './estateData';
 import { DsaTerminalModal } from './DsaTerminalModal';
 import { WebDevStudioModal } from './WebDevStudioModal';
@@ -41,10 +40,8 @@ import { NpcDialogModal } from './NpcDialogModal';
 import { SegfaultVoidModal } from './SegfaultVoidModal';
 import { NPC_CHARACTERS } from './npcDialog';
 import { DECOR_CATALOG } from './decorShop';
-=======
 import { usePlayerIdentity } from '@/components/game-core';
 import { floorsData } from './floorsData';
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 import { validateCodeAssembly } from './validator';
 import { houseAudio } from './audio';
 import { CodeHouseCanvas } from './CodeHouseCanvas';
@@ -145,7 +142,7 @@ const DEFAULT_STUDENT_DATA = (studentId: string): StudentCodeHouseData => ({
 });
 
 export function CodeHouseGame({ onExit, username: propUsername, avatarUrl: propAvatarUrl }: CodeHouseGameProps) {
-  const { selectedStudent } = useStudentProfiles();
+  const { selectedStudent, updateUserXP } = useStudentProfiles();
   const playerIdentity = usePlayerIdentity();
 
   const resolvedIdentity = useMemo(() => ({
@@ -772,6 +769,40 @@ export function CodeHouseGame({ onExit, username: propUsername, avatarUrl: propA
 
       if (result.isValid) {
         handleRoomSuccess(assembledLines.map((l) => l.code).join('\n'));
+        // Triumphant Success!
+        houseAudio.playValidationSuccess();
+        setGameState('success');
+
+        // Calculate and award XP directly outside state updater
+        const nextFloor = (currentFloorId + 1) as FloorId;
+        const isFirstTime = !saveData.completedFloors.includes(currentFloorId);
+        const xpGain = isFirstTime ? activeFloor.quest.xpReward : 0;
+        if (xpGain > 0 && updateUserXP) {
+          updateUserXP(xpGain);
+        }
+
+        // Persist completion and unlock next floor
+        persistSaveData((prev) => {
+          const unlocked = new Set(prev.unlockedFloors);
+          if (nextFloor <= 4) unlocked.add(nextFloor);
+
+          const completed = new Set(prev.completedFloors);
+          completed.add(currentFloorId);
+
+          return {
+            ...prev,
+            unlockedFloors: Array.from(unlocked) as FloorId[],
+            completedFloors: Array.from(completed) as FloorId[],
+            totalXP: prev.totalXP + xpGain,
+            floorBestTimes: {
+              ...prev.floorBestTimes,
+              [currentFloorId]:
+                prev.floorBestTimes[currentFloorId] === 0
+                  ? elapsedSeconds
+                  : Math.min(prev.floorBestTimes[currentFloorId], elapsedSeconds),
+            },
+          };
+        });
       } else {
         houseAudio.playValidationError();
         setShakeScreen(true);
@@ -1115,7 +1146,6 @@ export function CodeHouseGame({ onExit, username: propUsername, avatarUrl: propA
               setIsMoving(moving);
             }}
             activeKeys={activeKeysRef.current}
-<<<<<<< HEAD
             roomStates={saveData.roomStates}
             bugs={activeBugs}
             onSquashBug={handleSquashBug}
@@ -1125,11 +1155,9 @@ export function CodeHouseGame({ onExit, username: propUsername, avatarUrl: propA
             confettiActive={confettiActive}
             onRoomConnection={handleRoomConnection}
             onSegfaultTrap={handleSegfaultTrap}
-=======
             identity={resolvedIdentity}
             username={username}
             avatarUrl={avatarUrl}
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
           />
 
           {/* Mobile Virtual Controls */}

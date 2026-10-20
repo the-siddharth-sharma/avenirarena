@@ -10,7 +10,7 @@ export function Logo({ size = 40, className = '' }: LogoProps) {
       alt="AVENIR ARENA official logo"
       width={size}
       height={size}
-      className={`object-contain ${className}`}
+      className={`object-contain max-w-full max-h-full ${className}`}
     />
   );
 }

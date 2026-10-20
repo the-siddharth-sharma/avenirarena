@@ -83,7 +83,7 @@ export function CodeRunnerGame({ onExit }: CodeRunnerGameProps) {
   const { selectedStudent, submitGame, gameCompletions, submitCodeRunnerLevel } = useStudentProfiles();
 =======
 export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: propAvatarUrl }: CodeRunnerGameProps) {
-  const { selectedStudent, submitGame, gameCompletions } = useStudentProfiles();
+  const { selectedStudent, submitGame, gameCompletions, updateUserXP } = useStudentProfiles();
   const playerIdentity = usePlayerIdentity();
 
   // Ref for 60 FPS Canvas render loop to access current identity without closure thrashing
@@ -459,6 +459,12 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
       soundCtrl.startMenuAmbience();
       updateHighScore(s.scoreVal);
       setWrongReview(null);
+
+      // Persist real-time academic XP earned during this run
+      const earnedXP = Math.max(0, s.solvedCount * 10);
+      if (earnedXP > 0 && updateUserXP) {
+        updateUserXP(earnedXP);
+      }
       return;
     }
 
@@ -470,7 +476,7 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
     setWrongReview(null);
     spawnChallengeGate(1500);
     soundCtrl.resumeGameplayMusic();
-  }, [spawnChallengeGate, updateHighScore]);
+  }, [spawnChallengeGate, updateHighScore, updateUserXP]);
 
   // Restart from Game Over or Pause
   const restartGame = useCallback(() => {

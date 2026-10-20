@@ -70,24 +70,31 @@ export function Sidebar({ currentPath, onNavigate, isOpen, onClose }: SidebarPro
       >
         {/* Brand & Collapse Toggle */}
         <div
-          className={`flex items-center px-4 py-5 border-b border-line ${
-            isCollapsed ? 'justify-center' : 'justify-between'
+          className={`flex items-center border-b border-line transition-all duration-200 ${
+            isCollapsed
+              ? 'flex-col justify-center gap-2.5 py-4 px-2'
+              : 'justify-between px-4 py-5'
           }`}
         >
-          <div className="flex items-center gap-3 overflow-hidden">
+          <div className={`flex items-center overflow-hidden ${isCollapsed ? 'justify-center w-full' : 'gap-3 min-w-0'}`}>
             <div
-              className="text-gold-400 shrink-0 cursor-pointer"
+              className={`text-gold-400 shrink-0 cursor-pointer overflow-hidden flex items-center justify-center transition-all ${
+                isCollapsed ? 'w-8 h-8 mx-auto' : 'w-10 h-10'
+              }`}
               onClick={() => handleNav('/dashboard')}
               title="AVENIR ARENA"
             >
-              <Logo size={isCollapsed ? 36 : 40} className="rounded-sm" />
+              <Logo
+                size={isCollapsed ? 32 : 40}
+                className={`rounded-sm object-contain ${isCollapsed ? 'w-8 h-8 mx-auto' : 'w-10 h-10'}`}
+              />
             </div>
             {!isCollapsed && (
-              <div className="min-w-0 transition-opacity duration-200">
-                <h1 className="font-display font-medium text-ivory text-[15px] leading-tight tracking-tight truncate">
+              <div className="min-w-0 transition-opacity duration-200 overflow-hidden">
+                <h1 className="font-display font-medium text-ivory text-[15px] leading-tight tracking-tight truncate whitespace-nowrap">
                   AVENIR ARENA
                 </h1>
-                <p className="text-[10px] text-muted tracking-wide truncate">by Quasar</p>
+                <p className="text-[10px] text-muted tracking-wide truncate whitespace-nowrap">by Quasar</p>
               </div>
             )}
           </div>
@@ -95,7 +102,9 @@ export function Sidebar({ currentPath, onNavigate, isOpen, onClose }: SidebarPro
           {/* Desktop Collapse Toggle Button */}
           <button
             onClick={toggleCollapse}
-            className="hidden lg:flex items-center justify-center p-1.5 rounded-md text-muted hover:text-gold-400 hover:bg-elevated/60 transition-colors"
+            className={`hidden lg:flex items-center justify-center p-1.5 rounded-md text-muted hover:text-gold-400 hover:bg-elevated/60 transition-colors ${
+              isCollapsed ? 'w-7 h-7 mx-auto' : ''
+            }`}
             title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -199,7 +208,7 @@ export function Sidebar({ currentPath, onNavigate, isOpen, onClose }: SidebarPro
               </div>
               {currentUser ? (
                 <div className="pt-2 border-t border-line flex items-center justify-between text-[11px] font-mono text-gold-400">
-                  <span>{userProfile ? `${userProfile.year} Year` : 'Operative'}</span>
+                  <span>{userProfile ? (userProfile.year?.includes('Year') ? userProfile.year : `${userProfile.year} Year`) : 'Operative'}</span>
                   <span className="text-emerald-400 font-bold">Active</span>
                 </div>
               ) : (

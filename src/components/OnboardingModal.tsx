@@ -18,7 +18,7 @@ import {
 import { useAuth, checkUsernameUnique } from '@/context/AuthContext';
 import { useRouter } from '@/router';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '@/firebase';
+import { db, auth } from '@/firebase';
 import { FUTURISTIC_AVATARS, type AvatarOption } from '@/data/avatars';
 
 const CAMPUS_OPTIONS = [
@@ -49,11 +49,13 @@ const YEAR_OF_STUDY_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year'] a
 const BATCH_COHORT_PRESETS = ['2025-2029', '2026-2030', '2027-2031', '2028-2032'] as const;
 
 export function OnboardingModal() {
-  const { currentUser, isOnboardingRequired, saveUserProfile } = useAuth();
+  const { currentUser, isOnboardingRequired, needsRegistration, saveUserProfile } = useAuth();
   const { navigate } = useRouter();
 
   const [step, setStep] = useState<1 | 2>(1);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const isSubmitting = loading;
+  const setIsSubmitting = setLoading;
   const [submitError, setSubmitError] = useState<string>('');
 
   // Avatar choices: Include Google photo if present
@@ -135,6 +137,32 @@ export function OnboardingModal() {
     }
   }, [avatarOptions, selectedAvatarUrl]);
 
+  // Synchronize identity fields whenever currentUser changes (prevents stale account details)
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.displayName && currentUser.displayName !== 'Google User') {
+        const parts = currentUser.displayName.trim().split(' ');
+        setFirstName(parts[0] || '');
+        setLastName(parts.slice(1).join(' ') || '');
+        const sanitized = currentUser.displayName.replace(/[^a-zA-Z0-9_]/g, '');
+        if (sanitized.length >= 3) {
+          setUsername(sanitized);
+        } else if (currentUser.email) {
+          const emailPrefix = currentUser.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
+          setUsername(emailPrefix);
+        }
+      } else if (currentUser.email) {
+        const emailPrefix = currentUser.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
+        setUsername(emailPrefix);
+      }
+      if (currentUser.photoURL) {
+        setSelectedAvatarUrl(currentUser.photoURL);
+      }
+      setStep(1);
+      setSubmitError('');
+    }
+  }, [currentUser?.uid]);
+
   // Real-time debounced username verification
   useEffect(() => {
     const trimmed = username.trim();
@@ -189,7 +217,7 @@ export function OnboardingModal() {
     };
   }, [username]);
 
-  if (!isOnboardingRequired || !currentUser) {
+  if ((!isOnboardingRequired && !needsRegistration) || !currentUser) {
     return null;
   }
 
@@ -214,13 +242,16 @@ export function OnboardingModal() {
   };
 
   const handleCompleteSetup = async () => {
-    setSubmitError('');
-
-    // Authentication Guard: Ensure user is authenticated before attempting to write to the database
-    if (!currentUser || !currentUser.uid) {
+    // Authentication Guard: Ensure user is authenticated
+    const targetUid = currentUser?.uid || auth?.currentUser?.uid;
+    if (!targetUid) {
+      alert("Auth Error: User is not logged in. Please sign in with Google to complete registration.");
       setSubmitError('Authentication required. Please sign in with Google to complete registration.');
+      setLoading(false);
       return;
     }
+
+    setSubmitError('');
 
     // Validation: Ensure campus, yearOfStudy, and batchCohort are not empty
     if (!selectedCampus || !selectedCampus.trim()) {
@@ -254,19 +285,15 @@ export function OnboardingModal() {
       return;
     }
 
-    setIsSubmitting(true);
-
     try {
-      console.log("1. Starting Firestore Write for User:", currentUser.uid);
-      
-      const userRef = doc(db, 'users', currentUser.uid);
-      
-      // FIREBASE TIMEOUT GUARD (Agar DB 5 sec me response na de, toh infinite load roko)
-      const timeoutPromise = new Promise((_, reject) =>
+      setLoading(true);
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Firestore write timeout! Please check internet or Firebase Rules.')), 5000)
       );
 
-      // Save to Firebase Database safely
+      // 1. Critical Firestore Data Upsert with { merge: true } using targetUid guarded by a 5000ms timeout
+      const userRef = doc(db, 'users', targetUid);
       await Promise.race([
         setDoc(
           userRef,
@@ -274,7 +301,10 @@ export function OnboardingModal() {
             campus: selectedCampus,
             yearOfStudy: yearOfStudy,
             batchCohort: batchCohort.trim(),
+            academicXP: 0,
+            xp: 0,
             isRegistered: true,
+            // Sync full cadet profile attributes for AuthContext and Leaderboard
             username: username.trim(),
             firstName: firstName.trim(),
             lastName: lastName.trim(),
@@ -290,12 +320,10 @@ export function OnboardingModal() {
           },
           { merge: true }
         ),
-        timeoutPromise
+        timeoutPromise,
       ]);
 
-      console.log("2. Firestore Write Successful! Updating local profile...");
-
-      // Persist to AuthContext memory
+      // 2. Persist to AuthContext memory so isOnboardingRequired immediately resolves to false
       await saveUserProfile({
         username: username.trim(),
         firstName: firstName.trim(),
@@ -310,20 +338,20 @@ export function OnboardingModal() {
         },
       });
 
-      console.log("3. Profile updated. Triggering Ingress!");
-
-      // Portal Ingress
+      // 3. Portal Ingress: Navigate user into the main application dashboard ONLY upon successful setDoc
       navigate('/dashboard');
       window.location.hash = '/dashboard';
-      
-   } catch (err) {
+    } catch (err: unknown) {
       console.error('[AVENIR ARENA ONBOARDING] Ingress registration failed:', err);
-      // Ab error directly screen par dikhega aur TypeScript strictness fix ho gayi
-      setSubmitError((err as Error).message || 'Failed to establish database ingress. Please try again.');
+      const errorMessage =
+        (err as Error)?.message || 'Failed to establish database ingress. Please try again.';
+      setSubmitError(errorMessage);
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   }
+
+  const handleIngress = handleCompleteSetup;
 
   return (
     <div
@@ -785,7 +813,7 @@ export function OnboardingModal() {
           {step === 2 ? (
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={loading}
               onClick={() => setStep(1)}
               className="px-4 py-2.5 rounded-xl border border-line bg-graphite hover:bg-elevated disabled:opacity-50 text-xs font-mono font-medium text-muted hover:text-ivory transition-colors flex items-center gap-1.5"
             >
@@ -812,11 +840,11 @@ export function OnboardingModal() {
           ) : (
             <button
               type="button"
-              disabled={isSubmitting || !isStep2Valid || isBatchPriorTo2025}
+              disabled={loading || !isStep2Valid || isBatchPriorTo2025}
               onClick={handleCompleteSetup}
               className="px-6 py-2.5 rounded-xl border border-gold-400 bg-gold-400 hover:bg-gold-300 disabled:opacity-40 disabled:pointer-events-none text-obsidian text-xs font-bold font-mono flex items-center gap-2 transition-all shadow-[0_0_25px_rgba(208,180,119,0.4)] ml-auto active:scale-[0.98]"
             >
-              {isSubmitting ? (
+              {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-obsidian" />
                   <span>Authenticating Ingress...</span>
