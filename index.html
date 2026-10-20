@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="light">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/assets/images/image.png" />
@@ -12,11 +12,11 @@
       (function () {
         try {
           var stored = localStorage.getItem('avenir-theme');
-          var theme = stored || 'light';
+          var theme = (stored === 'light' || stored === 'dark') ? stored : 'dark';
           document.documentElement.classList.remove('light', 'dark');
           document.documentElement.classList.add(theme);
         } catch (e) {
-          document.documentElement.classList.add('light');
+          document.documentElement.classList.add('dark');
         }
       })();
     </script>

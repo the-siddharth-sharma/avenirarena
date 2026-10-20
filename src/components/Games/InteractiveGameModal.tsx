@@ -7,12 +7,15 @@ import {
   RotateCcw,
   Sparkles,
   ArrowRight,
-  Terminal,
   Brain,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import type { CatalogGame } from '@/data/gamesCatalog';
 import { useAuth } from '@/context/AuthContext';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+import { challengeAudio } from '@/utils/challengeAudio';
+import { GameLogo } from './GameLogo';
 
 interface InteractiveGameModalProps {
   game: CatalogGame;
@@ -40,6 +43,7 @@ export function InteractiveGameModal({ game, onClose, onComplete }: InteractiveG
   const [isCorrect, setIsCorrect] = useState<boolean>(false);
   const [explanation, setExplanation] = useState<string>('');
   const [awardedXP, setAwardedXP] = useState<number>(0);
+  const [isMuted, setIsMuted] = useState<boolean>(challengeAudio.muted);
 
   // Handle Parsons block movement
   const moveParsonsBlock = (fromIndex: number, toIndex: number) => {
@@ -72,6 +76,7 @@ export function InteractiveGameModal({ game, onClose, onComplete }: InteractiveG
     setHasSubmitted(true);
 
     if (correct) {
+      challengeAudio.playSuccess();
       const xp = game.xpReward || 150;
       setAwardedXP(xp);
       try {
@@ -85,6 +90,8 @@ export function InteractiveGameModal({ game, onClose, onComplete }: InteractiveG
       } catch (err) {
         console.warn('Failed to record game XP:', err);
       }
+    } else {
+      challengeAudio.playError();
     }
   };
 
@@ -102,29 +109,44 @@ export function InteractiveGameModal({ game, onClose, onComplete }: InteractiveG
       <div className="relative w-full max-w-2xl bg-graphite border border-gold-400/40 rounded-2xl shadow-[0_0_50px_rgba(208,180,119,0.2)] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header Bar */}
         <div className="flex items-center justify-between p-5 border-b border-line bg-obsidian">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400">
-              <Terminal className="w-5 h-5" />
-            </div>
-            <div>
+          <div className="flex items-center gap-3.5 min-w-0">
+            <GameLogo
+              gameId={game.id}
+              subjectId={game.subjectId}
+              mechanics={game.mechanicsFamily}
+              size="md"
+            />
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono border border-gold-400/30 bg-gold-400/10 text-gold-400">
                   {game.subjectName}
                 </span>
                 <span className="text-[10px] font-mono text-muted">• {game.difficulty}</span>
               </div>
-              <h2 className="text-base sm:text-lg font-display font-bold text-ivory mt-0.5">
+              <h2 className="text-base sm:text-lg font-display font-bold text-ivory mt-0.5 truncate">
                 {game.title}
               </h2>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-elevated border border-line flex items-center justify-center text-muted hover:text-ivory hover:border-gold-400/50 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                challengeAudio.toggleMute();
+                setIsMuted(challengeAudio.muted);
+              }}
+              className="w-8 h-8 rounded-lg bg-elevated border border-line flex items-center justify-center text-muted hover:text-ivory transition-colors"
+              title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-gold-400" />}
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg bg-elevated border border-line flex items-center justify-center text-muted hover:text-ivory hover:border-gold-400/50 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}

@@ -11,11 +11,16 @@ import {
   Zap,
   AlertOctagon,
   CheckCircle2,
+  Volume2,
+  VolumeX,
+  Sliders,
+  X,
 } from 'lucide-react';
 import { Card } from '@/components/Card';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/firebase';
 import { doc, setDoc, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
+import { cudoAudio, type CudoAudioSettings } from './cudoAudio';
 
 export interface CudoPlayer {
   id: string;
@@ -138,8 +143,22 @@ export function CudoGame({ onExit }: CudoGameProps) {
   const [winner, setWinner] = useState<CudoPlayer | null>(null);
   const [isHost, setIsHost] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [audioSettings, setAudioSettings] = useState<CudoAudioSettings>({ ...cudoAudio.settings });
+  const [showAudioSettings, setShowAudioSettings] = useState(false);
 
   const playerName = userProfile?.username || currentUser?.displayName || 'Cadet Operative';
+
+  // Ambient board game music lifecycle
+  useEffect(() => {
+    if (mode === 'solo' || mode === 'multiplayer-game') {
+      cudoAudio.startBackgroundMusic();
+    } else {
+      cudoAudio.stopBackgroundMusic();
+    }
+    return () => {
+      cudoAudio.stopAll();
+    };
+  }, [mode]);
 
   // Solo Mode Setup
   const startSoloGame = () => {
@@ -285,6 +304,7 @@ export function CudoGame({ onExit }: CudoGameProps) {
   const handleRollDice = () => {
     if (isRolling || winner || activeChallenge) return;
 
+    cudoAudio.playDiceRoll();
     setIsRolling(true);
     const roll = Math.floor(Math.random() * 6) + 1;
 
@@ -303,6 +323,8 @@ export function CudoGame({ onExit }: CudoGameProps) {
       let targetPos = Math.min(31, p.position + steps);
       const tile = BOARD_TILES[targetPos];
 
+      cudoAudio.playPawnStep();
+
       const logMsg = `${p.name} rolled a ${steps} -> Landed on [${tile.index}] ${tile.label}`;
       const newLogs = [...gameLog, logMsg];
 
@@ -311,19 +333,23 @@ export function CudoGame({ onExit }: CudoGameProps) {
         p.position = 31;
         p.score += 350;
         setWinner(p);
+        cudoAudio.playVictory();
         newLogs.push(`🏆 ${p.name} reached PRODUCTION DEPLOYMENT and won the match!`);
         updateUserXP(350).catch(() => {});
       } else if (tile.type === 'boost' && tile.effectValue) {
         targetPos = Math.min(31, targetPos + tile.effectValue);
         p.position = targetPos;
         p.score += 50;
+        cudoAudio.playBoost();
         newLogs.push(`⚡ Boost activated! ${p.name} jumped forward to [${targetPos}] ${BOARD_TILES[targetPos].label}`);
       } else if (tile.type === 'hazard' && tile.effectValue) {
         targetPos = Math.max(0, targetPos + tile.effectValue);
         p.position = targetPos;
+        cudoAudio.playHazard();
         newLogs.push(`⚠️ Hazard encountered! ${p.name} fell back to [${targetPos}] ${BOARD_TILES[targetPos].label}`);
       } else if (tile.type === 'challenge') {
         p.position = targetPos;
+        cudoAudio.playChallengeAlert();
         const randomChallenge = MINI_CHALLENGES[Math.floor(Math.random() * MINI_CHALLENGES.length)];
         setActiveChallenge({ challenge: randomChallenge, playerIdx: currentTurn });
       } else {
@@ -383,6 +409,7 @@ export function CudoGame({ onExit }: CudoGameProps) {
       const p = { ...next[playerIdx] };
 
       if (correct) {
+        cudoAudio.playSuccessChime();
         p.score += 100;
         p.position = Math.min(31, p.position + 1);
         setGameLog((logs) => [
@@ -391,6 +418,7 @@ export function CudoGame({ onExit }: CudoGameProps) {
         ]);
         if (!p.isAI) updateUserXP(100).catch(() => {});
       } else {
+        cudoAudio.playFailureBuzz();
         setGameLog((logs) => [
           ...logs,
           `❌ ${p.name} failed the Challenge. (No advance)`,
@@ -608,8 +636,21 @@ export function CudoGame({ onExit }: CudoGameProps) {
           </div>
         </div>
 
-        {/* Player Turn Pills */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Player Turn Pills & Audio Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => setShowAudioSettings(true)}
+            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-obsidian border border-line text-muted hover:text-gold-400 hover:border-gold-400/40 transition-colors flex items-center gap-1.5 text-xs font-mono"
+            title="Configure CUDO Audio"
+          >
+            {audioSettings.masterMuted ? (
+              <VolumeX className="w-3.5 h-3.5 text-red-400" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-gold-400" />
+            )}
+            <span className="hidden sm:inline">Audio</span>
+          </button>
+
           {players.map((p, idx) => {
             const isTurn = idx === currentTurn;
             return (
@@ -637,15 +678,15 @@ export function CudoGame({ onExit }: CudoGameProps) {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left: Interactive Board Grid (32 tiles arranged in circuit) */}
         <div className="lg:col-span-3 space-y-4">
-          <Card className="p-4 sm:p-6 border-line bg-graphite/90 shadow-2xl relative overflow-hidden">
-            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+          <Card className="p-2.5 sm:p-6 border-line bg-graphite/90 shadow-2xl relative overflow-hidden">
+            <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5 sm:gap-2">
               {BOARD_TILES.map((tile) => {
                 const occupants = players.filter((p) => p.position === tile.index);
 
                 return (
                   <div
                     key={tile.index}
-                    className={`relative p-2.5 min-h-[72px] rounded-xl border flex flex-col justify-between transition-all ${
+                    className={`relative p-1.5 sm:p-2.5 min-h-[64px] sm:min-h-[72px] rounded-lg sm:rounded-xl border flex flex-col justify-between transition-all ${
                       tile.type === 'finish'
                         ? 'border-gold-400 bg-gold-400/20 shadow-[0_0_20px_rgba(208,180,119,0.3)]'
                         : tile.type === 'hazard'
@@ -659,7 +700,7 @@ export function CudoGame({ onExit }: CudoGameProps) {
                         : 'border-line bg-obsidian'
                     }`}
                   >
-                    <div className="flex items-center justify-between text-[10px] font-mono">
+                    <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-mono">
                       <span className="font-bold opacity-60">#{tile.index}</span>
                       {tile.type === 'hazard' && <span className="text-red-400">⚠️</span>}
                       {tile.type === 'boost' && <span className="text-cyan-400">⚡</span>}
@@ -668,12 +709,12 @@ export function CudoGame({ onExit }: CudoGameProps) {
                       {tile.type === 'finish' && <span className="text-gold-400">🏆</span>}
                     </div>
 
-                    <div className="text-[10px] font-medium leading-tight text-ivory truncate mt-1" title={tile.label}>
+                    <div className="text-[9px] sm:text-[10px] font-medium leading-tight text-ivory truncate mt-0.5 sm:mt-1" title={tile.label}>
                       {tile.label}
                     </div>
 
                     {/* Occupants Pawns */}
-                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
                       {occupants.map((occ) => (
                         <div
                           key={occ.id}
@@ -820,6 +861,135 @@ export function CudoGame({ onExit }: CudoGameProps) {
                 Play Again
               </button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Audio Settings Modal */}
+      {showAudioSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <Card className="max-w-sm w-full p-6 border-gold-400/40 bg-graphite shadow-2xl space-y-5">
+            <div className="flex items-center justify-between pb-2 border-b border-line">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-gold-400" />
+                <h3 className="font-display font-bold text-sm text-ivory">CUDO Audio Controls</h3>
+              </div>
+              <button
+                onClick={() => setShowAudioSettings(false)}
+                className="p-1 rounded-md text-muted hover:text-ivory"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Master Volume */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-ivory">Master Volume</span>
+                <button
+                  onClick={() => {
+                    const next = !audioSettings.masterMuted;
+                    cudoAudio.setMasterMute(next);
+                    setAudioSettings({ ...cudoAudio.settings });
+                  }}
+                  className={`text-[10px] px-2 py-0.5 rounded border ${
+                    audioSettings.masterMuted
+                      ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                  }`}
+                >
+                  {audioSettings.masterMuted ? 'Muted' : 'Active'}
+                </button>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={audioSettings.masterVolume}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  cudoAudio.setMasterVolume(val);
+                  setAudioSettings({ ...cudoAudio.settings });
+                }}
+                className="w-full accent-gold-400"
+              />
+            </div>
+
+            {/* Music */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-ivory">Board Ambience Music</span>
+                <button
+                  onClick={() => {
+                    const next = !audioSettings.musicMuted;
+                    cudoAudio.setMusicMute(next);
+                    setAudioSettings({ ...cudoAudio.settings });
+                  }}
+                  className={`text-[10px] px-2 py-0.5 rounded border ${
+                    audioSettings.musicMuted
+                      ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                  }`}
+                >
+                  {audioSettings.musicMuted ? 'Off' : 'On'}
+                </button>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={audioSettings.musicVolume}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  cudoAudio.setMusicVolume(val);
+                  setAudioSettings({ ...cudoAudio.settings });
+                }}
+                className="w-full accent-gold-400"
+              />
+            </div>
+
+            {/* SFX */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-ivory">Sound Effects (Dice, Chimes)</span>
+                <button
+                  onClick={() => {
+                    const next = !audioSettings.sfxMuted;
+                    cudoAudio.setSfxMute(next);
+                    setAudioSettings({ ...cudoAudio.settings });
+                  }}
+                  className={`text-[10px] px-2 py-0.5 rounded border ${
+                    audioSettings.sfxMuted
+                      ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                  }`}
+                >
+                  {audioSettings.sfxMuted ? 'Off' : 'On'}
+                </button>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={audioSettings.sfxVolume}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  cudoAudio.setSfxVolume(val);
+                  setAudioSettings({ ...cudoAudio.settings });
+                }}
+                className="w-full accent-gold-400"
+              />
+            </div>
+
+            <button
+              onClick={() => setShowAudioSettings(false)}
+              className="w-full btn btn-primary text-xs py-2 font-mono"
+            >
+              Done
+            </button>
           </Card>
         </div>
       )}

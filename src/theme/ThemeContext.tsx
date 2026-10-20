@@ -10,14 +10,14 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 function getInitialTheme(): Theme {
-  if (typeof window === 'undefined') return 'light';
+  if (typeof window === 'undefined') return 'dark';
   try {
     const stored = localStorage.getItem('avenir-theme');
     if (stored === 'dark' || stored === 'light') return stored;
   } catch {
     // ignore
   }
-  return 'light';
+  return 'dark';
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -48,7 +48,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
-    return { theme: 'light', toggleTheme: () => {} };
+    return { theme: 'dark', toggleTheme: () => {} };
   }
   return ctx;
 }

@@ -43,6 +43,7 @@ import { CodeRunnerGame } from '@/components/CodeRunner/CodeRunnerGame';
 import { CodeHouseGame } from '@/components/CodeHouse/CodeHouseGame';
 import { CudoGame } from '@/components/Cudo/CudoGame';
 import { InteractiveGameModal } from '@/components/Games/InteractiveGameModal';
+import { GameLogo } from '@/components/Games/GameLogo';
 import type { LearningGameId } from '@/types';
 import type { NavigateProps } from './types';
 
@@ -416,19 +417,24 @@ export function GamesPage({ navigate }: NavigateProps) {
         {/* Flagship 1: CUDO Multiplayer Board Game */}
         <Card className="relative overflow-hidden p-6 border-gold-400/40 bg-gradient-to-br from-obsidian via-graphite to-elevated shadow-xl flex flex-col justify-between group hover:border-gold-400 transition-all">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-gold-400/20 text-gold-400 border border-gold-400/40 font-bold flex items-center gap-1">
-                <Dices className="w-3 h-3" />
-                MULTIPLAYER BOARD GAME
-              </span>
-              <span className="text-[10px] font-mono text-emerald-400">+350 XP</span>
+            <div className="flex items-start justify-between gap-3">
+              <GameLogo gameId="cudo" size="lg" />
+              <div className="flex flex-col items-end gap-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-gold-400/20 text-gold-400 border border-gold-400/40 font-bold flex items-center gap-1">
+                  <Dices className="w-3 h-3" />
+                  BOARD GAME
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 font-bold">+350 XP</span>
+              </div>
             </div>
-            <h3 className="text-xl font-display font-bold text-ivory group-hover:text-gold-400 transition-colors">
-              CUDO: Code & Conquer
-            </h3>
-            <p className="text-xs text-muted leading-relaxed">
-              Turn-based multiplayer CS board game. Roll dice across 32 circuit tiles, solve live algorithm challenges, and race to Production Deployment!
-            </p>
+            <div>
+              <h3 className="text-xl font-display font-bold text-ivory group-hover:text-gold-400 transition-colors">
+                CUDO: Code & Conquer
+              </h3>
+              <p className="text-xs text-muted leading-relaxed mt-1">
+                Turn-based multiplayer CS board game. Roll dice across 32 circuit tiles, solve live algorithm challenges, and race to Production Deployment!
+              </p>
+            </div>
           </div>
           <button
             onClick={() => setPlayingCudo(true)}
@@ -442,19 +448,24 @@ export function GamesPage({ navigate }: NavigateProps) {
         {/* Flagship 2: The Code House 2D Mansion */}
         <Card className="relative overflow-hidden p-6 border-cyan-500/40 bg-gradient-to-br from-obsidian via-graphite to-elevated shadow-xl flex flex-col justify-between group hover:border-cyan-400 transition-all">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-bold flex items-center gap-1">
-                <DoorOpen className="w-3 h-3" />
-                2D PUZZLE MANSION
-              </span>
-              <span className="text-[10px] font-mono text-cyan-400">4 Floors</span>
+            <div className="flex items-start justify-between gap-3">
+              <GameLogo gameId="code-house" size="lg" />
+              <div className="flex flex-col items-end gap-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-bold flex items-center gap-1">
+                  <DoorOpen className="w-3 h-3" />
+                  PUZZLE MANSION
+                </span>
+                <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">4 Floors</span>
+              </div>
             </div>
-            <h3 className="text-xl font-display font-bold text-ivory group-hover:text-cyan-400 transition-colors">
-              The Code House
-            </h3>
-            <p className="text-xs text-muted leading-relaxed">
-              Step through shadowed rooms, search bookcases, open locked chests, recover C++ code fragments, and assemble programs at the Grand Terminal.
-            </p>
+            <div>
+              <h3 className="text-xl font-display font-bold text-ivory group-hover:text-cyan-400 transition-colors">
+                The Code House
+              </h3>
+              <p className="text-xs text-muted leading-relaxed mt-1">
+                Step through shadowed rooms, search bookcases, open locked chests, recover C++ code fragments, and assemble programs at the Grand Terminal.
+              </p>
+            </div>
           </div>
           <div className="mt-5 flex items-center gap-2">
             <button
@@ -477,19 +488,24 @@ export function GamesPage({ navigate }: NavigateProps) {
         {/* Flagship 3: Code Runner 3D */}
         <Card className="relative overflow-hidden p-6 border-emerald-500/40 bg-gradient-to-br from-obsidian via-graphite to-elevated shadow-xl flex flex-col justify-between group hover:border-emerald-400 transition-all">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold flex items-center gap-1">
-                <Flame className="w-3 h-3" />
-                3D CYBER RUNNER
-              </span>
-              <span className="text-[10px] font-mono text-emerald-400">Real-Time</span>
+            <div className="flex items-start justify-between gap-3">
+              <GameLogo gameId="code-runner" size="lg" />
+              <div className="flex flex-col items-end gap-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold flex items-center gap-1">
+                  <Flame className="w-3 h-3" />
+                  CYBER RUNNER
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">Real-Time</span>
+              </div>
             </div>
-            <h3 className="text-xl font-display font-bold text-ivory group-hover:text-emerald-400 transition-colors">
-              Code Runner 3D
-            </h3>
-            <p className="text-xs text-muted leading-relaxed">
-              Sprint through a 3-lane futuristic cyber track. Steer through correct C++, Python, and JS syntax gateway portals to rack up multiplier streaks.
-            </p>
+            <div>
+              <h3 className="text-xl font-display font-bold text-ivory group-hover:text-emerald-400 transition-colors">
+                Code Runner 3D
+              </h3>
+              <p className="text-xs text-muted leading-relaxed mt-1">
+                Sprint through a 3-lane futuristic cyber track. Steer through correct C++, Python, and JS syntax gateway portals to rack up multiplier streaks.
+              </p>
+            </div>
           </div>
           <button
             onClick={() => setPlayingCodeRunner(true)}
@@ -733,14 +749,23 @@ export function GamesPage({ navigate }: NavigateProps) {
                       )}
                     </div>
 
-                    {/* Title & Description */}
-                    <div>
-                      <h4 className="font-display font-bold text-sm text-ivory group-hover:text-gold-400 transition-colors line-clamp-1">
-                        {game.title}
-                      </h4>
-                      <p className="text-xs text-muted mt-1 leading-relaxed line-clamp-2">
-                        {game.description}
-                      </p>
+                    {/* Title, Visual Identity Logo & Description */}
+                    <div className="flex items-start gap-3">
+                      <GameLogo
+                        gameId={game.id}
+                        subjectId={game.subjectId}
+                        mechanics={game.mechanicsFamily}
+                        size="md"
+                        className="shrink-0 group-hover:scale-105 transition-transform"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-display font-bold text-sm text-ivory group-hover:text-gold-400 transition-colors line-clamp-1">
+                          {game.title}
+                        </h4>
+                        <p className="text-xs text-muted mt-1 leading-relaxed line-clamp-2">
+                          {game.description}
+                        </p>
+                      </div>
                     </div>
 
                     {/* Tags row */}

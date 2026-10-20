@@ -1007,11 +1007,11 @@ export function CodeHouseCanvas({
   };
 
   return (
-    <div className="relative w-full h-[540px] sm:h-[600px] rounded-xl overflow-hidden border border-line bg-obsidian">
+    <div className="relative w-full h-[420px] sm:h-[540px] md:h-[600px] rounded-xl overflow-hidden border border-line bg-obsidian">
       <canvas
         ref={canvasRef}
         onClick={handleCanvasClick}
-        className="w-full h-full block cursor-crosshair select-none"
+        className="w-full h-full block cursor-crosshair select-none touch-none"
       />
     </div>
   );

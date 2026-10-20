@@ -16,7 +16,7 @@ export function AppLayout({ currentPath, onNavigate, children }: AppLayoutProps)
   const isDashboard = currentPath === '/dashboard' || currentPath === '/';
 
   return (
-    <div className="min-h-screen bg-obsidian flex">
+    <div className="min-h-screen bg-obsidian flex flex-col lg:flex-row">
       {/* Infinite Trace cursor animation strictly scoped to Left Navigation Column and Dashboard view */}
       <GlobalCursor currentPath={currentPath} />
       <Sidebar
@@ -25,16 +25,19 @@ export function AppLayout({ currentPath, onNavigate, children }: AppLayoutProps)
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
-      <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
 
-      <main className="flex-1 min-w-0 lg:pl-0 pl-14 overflow-x-hidden flex flex-col justify-between">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-6 lg:py-10 w-full flex-1">
-          <BackgroundEffects showDashboardEffects={isDashboard}>
-            {children}
-          </BackgroundEffects>
-          <FooterGlossary />
-        </div>
-      </main>
+      <div className="flex-1 flex flex-col min-w-0">
+        <MobileHeader onMenuClick={() => setSidebarOpen(true)} onNavigate={onNavigate} />
+
+        <main className="flex-1 min-w-0 overflow-x-hidden flex flex-col justify-between">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-10 w-full flex-1">
+            <BackgroundEffects showDashboardEffects={isDashboard}>
+              {children}
+            </BackgroundEffects>
+            <FooterGlossary />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

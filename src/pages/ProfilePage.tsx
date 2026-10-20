@@ -436,9 +436,25 @@ export function ProfilePage() {
                   className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 py-3 border-b border-line last:border-0"
                 >
                   <span className="text-sm text-muted">{row.label}</span>
-                  <span className="text-sm text-ivory font-medium sm:text-right truncate max-w-xs">
-                    {row.value}
-                  </span>
+                  {row.label.includes('Callsign') ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gold-400 font-mono font-medium truncate max-w-xs">
+                        {row.value}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={openUsernameEditor}
+                        className="text-xs text-gold-400 hover:text-gold-300 underline font-mono flex items-center gap-1 py-0.5 px-1.5 rounded hover:bg-gold-400/10 transition-colors"
+                        title="Change your Arena Callsign"
+                      >
+                        <Edit3 className="w-3 h-3" /> Change
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-ivory font-medium sm:text-right truncate max-w-xs">
+                      {row.value}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -587,6 +603,29 @@ export function ProfilePage() {
                   Update your identity credentials and connect external profiles.
                 </p>
               </div>
+            </div>
+
+            {/* Direct Callsign Editor Shortcut */}
+            <div className="mb-5 p-3.5 rounded-xl border border-gold-400/30 bg-gold-400/10 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-wide text-gold-400 font-semibold block">
+                  Arena Callsign (Username)
+                </span>
+                <span className="font-mono text-sm text-ivory font-bold">
+                  @{userProfile?.username || selectedStudent.username || selectedStudent.displayName}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(false);
+                  openUsernameEditor();
+                }}
+                className="btn btn-secondary text-xs px-3 py-1.5 font-mono flex items-center gap-1.5"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-gold-400" />
+                <span>Change Callsign</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -2,49 +2,8 @@
 
 /* ── Theme tokens ─────────────────────────────────────────────────── */
 
-:root, .light {
-  /* Mech Lab Cockpit — Light Mode (default) */
-  --c-bg: #F3F2EE;
-  --c-surface: #FFFFFF;
-  --c-surface-2: #F7F9FA;
-  --c-elevated: #EAE8E1;
-  --c-elevated-2: #D8D5CB;
-  --c-text: #191A19;
-  --c-text-muted: #666760;
-  --c-border: #D8D5CB;
-  --c-border-light: #B9B6AB;
-  --c-accent: #B39458;
-  --c-accent-light: #C7AA70;
-  --c-accent-dark: #806638;
-  --c-accent-2: #9B9C98;
-  --c-success: #806638;
-  --c-warning: #B39458;
-  --c-error: #806638;
-  --c-accent-text: #17232F;
-  --c-accent-2-text: #191A19;
-  --c-overlay: rgba(0, 0, 0, 0.3);
-  --c-notification-dot: #B39458;
-  --c-badge-bg: rgba(23, 107, 135, 0.08);
-  --c-badge-text: #806638;
-  --c-nav-active-bg: rgba(255, 104, 92, 0.08);
-  --c-nav-active-text: #806638;
-  --c-nav-active-border: rgba(255, 104, 92, 0.2);
-  --c-tab-active-bg: rgba(255, 104, 92, 0.08);
-  --c-tab-active-text: #806638;
-  --c-tab-active-border: rgba(255, 104, 92, 0.2);
-  --c-progress-fill: #B39458;
-  --c-progress-track: #E9EDF0;
-  --c-scrollbar: rgba(23, 35, 47, 0.12);
-  --c-scrollbar-hover: rgba(23, 35, 47, 0.2);
-  --c-selection: rgba(255, 104, 92, 0.2);
-  --c-decoration: rgba(155, 156, 152, 0.12);
-  --c-grid-line: rgba(155, 156, 152, 0.08);
-  --c-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  color-scheme: light;
-}
-
-.dark {
-  /* Cyberpunk HUD — Dark Mode */
+:root, .dark {
+  /* Cyberpunk HUD — Dark Mode (Default) */
   --c-bg: #101315;
   --c-surface: #181D20;
   --c-surface-2: #14181B;
@@ -82,6 +41,47 @@
   --c-grid-line: rgba(196, 197, 193, 0.06);
   --c-shadow: none;
   color-scheme: dark;
+}
+
+.light {
+  /* Mech Lab Cockpit — Light Mode */
+  --c-bg: #F3F2EE;
+  --c-surface: #FFFFFF;
+  --c-surface-2: #F7F9FA;
+  --c-elevated: #EAE8E1;
+  --c-elevated-2: #D8D5CB;
+  --c-text: #191A19;
+  --c-text-muted: #666760;
+  --c-border: #D8D5CB;
+  --c-border-light: #B9B6AB;
+  --c-accent: #B39458;
+  --c-accent-light: #C7AA70;
+  --c-accent-dark: #806638;
+  --c-accent-2: #9B9C98;
+  --c-success: #806638;
+  --c-warning: #B39458;
+  --c-error: #806638;
+  --c-accent-text: #17232F;
+  --c-accent-2-text: #191A19;
+  --c-overlay: rgba(0, 0, 0, 0.3);
+  --c-notification-dot: #B39458;
+  --c-badge-bg: rgba(23, 107, 135, 0.08);
+  --c-badge-text: #806638;
+  --c-nav-active-bg: rgba(255, 104, 92, 0.08);
+  --c-nav-active-text: #806638;
+  --c-nav-active-border: rgba(255, 104, 92, 0.2);
+  --c-tab-active-bg: rgba(255, 104, 92, 0.08);
+  --c-tab-active-text: #806638;
+  --c-tab-active-border: rgba(255, 104, 92, 0.2);
+  --c-progress-fill: #B39458;
+  --c-progress-track: #E9EDF0;
+  --c-scrollbar: rgba(23, 35, 47, 0.12);
+  --c-scrollbar-hover: rgba(23, 35, 47, 0.2);
+  --c-selection: rgba(255, 104, 92, 0.2);
+  --c-decoration: rgba(155, 156, 152, 0.12);
+  --c-grid-line: rgba(155, 156, 152, 0.08);
+  --c-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
 }
 
 /* ── Base ─────────────────────────────────────────────────────────── */

@@ -1116,7 +1116,7 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
   return (
     <div
       ref={containerRef}
-      className="relative flex flex-col w-full h-[620px] max-w-5xl mx-auto rounded-xl border border-line bg-obsidian overflow-hidden select-none shadow-2xl"
+      className="relative flex flex-col w-full h-[520px] sm:h-[620px] max-w-5xl mx-auto rounded-xl border border-line bg-obsidian overflow-hidden select-none shadow-2xl touch-none"
     >
       {/* Top Game Navigation & Status Header */}
       <div className="absolute top-0 inset-x-0 z-30 flex items-center justify-between px-3 sm:px-4 py-2.5 bg-graphite/90 backdrop-blur-md border-b border-line gap-2">
