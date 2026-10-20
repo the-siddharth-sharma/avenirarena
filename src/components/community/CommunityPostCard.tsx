@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Heart,
   MessageCircle,
@@ -212,6 +212,14 @@ export function CommunityPostCard({
     }
   };
 
+  const handleCommentCountChange = useCallback(
+    (count: number) => {
+      setCommentCount(count);
+      onPostUpdate?.(post.id, { commentCount: count });
+    },
+    [post.id, onPostUpdate]
+  );
+
   return (
     <div
       ref={cardRef}
@@ -403,10 +411,7 @@ export function CommunityPostCard({
           <PostCommentSection
             postId={post.id}
             commentCount={commentCount}
-            onCommentCountChange={(count) => {
-              setCommentCount(count);
-              onPostUpdate?.(post.id, { commentCount: count });
-            }}
+            onCommentCountChange={handleCommentCountChange}
             autoFocusInput={true}
           />
         )}
