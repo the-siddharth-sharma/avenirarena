@@ -6,13 +6,9 @@ import {
   Sparkles,
   Shield,
   User,
-  GraduationCap,
-  Building2,
   Calendar,
   ArrowRight,
   ArrowLeft,
-  ChevronRight,
-  Flame,
   AlertCircle,
 } from 'lucide-react';
 import { useAuth, checkUsernameUnique } from '@/context/AuthContext';
@@ -54,8 +50,6 @@ export function OnboardingModal() {
 
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState<boolean>(false);
-  const isSubmitting = loading;
-  const setIsSubmitting = setLoading;
   const [submitError, setSubmitError] = useState<string>('');
 
   // Avatar choices: Include Google photo if present
@@ -295,32 +289,39 @@ export function OnboardingModal() {
       // 1. Critical Firestore Data Upsert with { merge: true } using targetUid guarded by a 5000ms timeout
       const existingXP = Number(userProfile?.academicXP ?? userProfile?.xp ?? 0);
       const userRef = doc(db, 'users', targetUid);
+      const userEmail = currentUser?.email || auth?.currentUser?.email || '';
+      const isUserAdmin = userEmail.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL || 'siddharthsharma2649@gmail.com').toLowerCase();
+      
+      const firestorePayload = {
+        uid: targetUid,
+        email: userEmail,
+        role: isUserAdmin ? 'admin' : (userProfile?.role || 'cadet'),
+        campus: selectedCampus,
+        yearOfStudy: yearOfStudy,
+        batchCohort: batchCohort.trim(),
+        academicXP: existingXP,
+        xp: existingXP,
+        isRegistered: true,
+        // Sync full cadet profile attributes for AuthContext and Leaderboard
+        username: username.trim(),
+        displayName: username.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        avatarUrl: selectedAvatarUrl,
+        photoURL: selectedAvatarUrl,
+        year: yearOfStudy,
+        batch: batchCohort.trim(),
+        isSetupComplete: true,
+        socialLinks: {
+          linkedin: linkedinUrl.trim(),
+          other: otherUrl.trim(),
+        },
+        createdAt: userProfile?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
       await Promise.race([
-        setDoc(
-          userRef,
-          {
-            campus: selectedCampus,
-            yearOfStudy: yearOfStudy,
-            batchCohort: batchCohort.trim(),
-            academicXP: existingXP,
-            xp: existingXP,
-            isRegistered: true,
-            // Sync full cadet profile attributes for AuthContext and Leaderboard
-            username: username.trim(),
-            firstName: firstName.trim(),
-            lastName: lastName.trim(),
-            avatarUrl: selectedAvatarUrl,
-            year: yearOfStudy,
-            batch: batchCohort.trim(),
-            isSetupComplete: true,
-            socialLinks: {
-              linkedin: linkedinUrl.trim(),
-              other: otherUrl.trim(),
-            },
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        ),
+        setDoc(userRef, firestorePayload, { merge: true }),
         timeoutPromise,
       ]);
 
@@ -351,8 +352,6 @@ export function OnboardingModal() {
       setLoading(false);
     }
   }
-
-  const handleIngress = handleCompleteSetup;
 
   return (
     <div

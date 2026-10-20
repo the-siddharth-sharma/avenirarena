@@ -17,7 +17,7 @@ import { badgeDefinitions, getPeriodKey, getWeekKey, questDefinitions } from '@/
 import { calculateDailyQuizScore, getAcademicDate } from '@/engine/xpRules';
 import { traceEngine } from '@/engine/infiniteTrace';
 import { useAuth } from '@/context/AuthContext';
-import { firestoreService, fetchRealtimeCadets } from '@/firebaseConfig';
+import { fetchRealtimeCadets } from '@/firebaseConfig';
 
 const SELECTED_STUDENT_KEY = 'avenir-selected-student';
 const STUDENT_PROFILES_KEY = 'avenir-student-profiles';
@@ -39,7 +39,7 @@ export const defaultCadetStudent: StudentProfile = {
   completedQuests: 0,
   courseBranch: 'Computer Science & Engineering',
   year: 'Year 1',
-  batch: 'Batch 2026',
+  batch: '2025-2029',
   campus: 'MSOT Ghaziabad',
   joinedDate: new Date().toISOString(),
   profileCompletion: 50,
@@ -184,7 +184,9 @@ function getInitialSelectedStudentId(): string {
       const u = JSON.parse(rawUser);
       return u.uid || '';
     }
-  } catch {}
+  } catch {
+    // Ignore storage parse error
+  }
   return '';
 }
 
@@ -224,7 +226,9 @@ function getInitialStudents(): StudentProfile[] {
       };
       return [initialStudent];
     }
-  } catch {}
+  } catch {
+    // Ignore storage parse error
+  }
   return [];
 }
 
@@ -261,7 +265,7 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
             completedQuests: u.gamesPlayed || 0,
             courseBranch: 'Computer Science & Engineering',
             year: u.year ? (u.year.includes('Year') || u.year.includes('20') ? u.year : `${u.year} Year`) : 'Year 1',
-            batch: u.batch || 'Batch 2026',
+            batch: u.batch || '2025-2029',
             campus: u.campus || 'MSOT Ghaziabad',
             joinedDate: u.createdAt || new Date().toISOString(),
             profileCompletion: 100,
@@ -289,7 +293,7 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
             completedQuests: userProfile?.gamesPlayed ?? 0,
             courseBranch: 'Computer Science & Engineering',
             year: userProfile?.year ? (userProfile.year.includes('Year') || userProfile.year.includes('20') ? userProfile.year : `${userProfile.year} Year`) : 'Year 1',
-            batch: userProfile?.batch || 'Batch 2026',
+            batch: userProfile?.batch || '2025-2029',
             campus: userProfile?.campus || 'MSOT Ghaziabad',
             joinedDate: userProfile?.createdAt || new Date().toISOString(),
             profileCompletion: userProfile?.isSetupComplete ? 100 : 50,

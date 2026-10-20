@@ -31,10 +31,12 @@ service cloud.firestore {
                     && (request.resource.data.role == 'cadet' || isAdmin());
 
       // Only the profile owner or admin can update the document
-      // Normal cadets cannot elevate their own role to 'admin'
+      // Normal cadets cannot elevate their own role to 'admin', and cannot change UID
       allow update: if (isOwner(userId) && (
-                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) ||
-                        isAdmin()
+                        request.resource.data.uid == userId &&
+                        (request.resource.data.role == resource.data.role ||
+                         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) ||
+                         isAdmin())
                       )) || isAdmin();
 
       // Only the owner or admin can delete their profile
@@ -73,6 +75,12 @@ service cloud.firestore {
     match /quizzes/{quizId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // ── CUDO MULTIPLAYER ROOMS ────────────────────────────────────
+    match /cudo_rooms/{roomId} {
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() && (resource.data.hostId == request.auth.uid || isAdmin());
     }
 
     // ── DEFAULT DENY ─────────────────────────────────────────────

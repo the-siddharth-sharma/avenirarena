@@ -178,10 +178,10 @@ export function ProfilePage() {
       { label: 'Display Name', value: selectedStudent.displayName },
       { label: 'Student ID', value: selectedStudent.studentId },
       { label: 'Course / Branch', value: selectedStudent.courseBranch },
-      { label: 'Year', value: selectedStudent.year },
-      { label: 'Batch', value: selectedStudent.batch },
-      { label: 'Campus', value: selectedStudent.campus },
-      { label: 'Joined', value: selectedStudent.joinedDate },
+      { label: 'Year', value: userProfile?.year || selectedStudent.year },
+      { label: 'Batch', value: userProfile?.batch || selectedStudent.batch },
+      { label: 'Campus', value: userProfile?.campus || selectedStudent.campus },
+      { label: 'Joined', value: userProfile?.createdAt?.slice(0, 10) || selectedStudent.joinedDate },
       {
         label: 'LinkedIn URL',
         value: userProfile?.socialLinks?.linkedin || form.linkedin || 'Not linked',
@@ -308,15 +308,15 @@ export function ProfilePage() {
               </span>
               <span className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5" />
-                {selectedStudent.campus}
+                {userProfile?.campus || selectedStudent.campus}
               </span>
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" />
-                Joined {selectedStudent.joinedDate}
+                Joined {userProfile?.createdAt?.slice(0, 10) || selectedStudent.joinedDate}
               </span>
             </div>
             <p className="text-sm text-muted mt-2">
-              {selectedStudent.courseBranch} · {selectedStudent.year} · {selectedStudent.batch}
+              {selectedStudent.courseBranch} · {userProfile?.year || selectedStudent.year} · {userProfile?.batch || selectedStudent.batch}
             </p>
 
             {/* Social Links Row */}

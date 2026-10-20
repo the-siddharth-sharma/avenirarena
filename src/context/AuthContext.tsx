@@ -202,13 +202,13 @@ function getInitialStoredProfile(): UserProfile | null {
       return {
         uid: doc.uid,
         email: doc.email,
-        username: doc.username,
+        username: doc.username || doc.displayName || 'Cadet',
         firstName: doc.firstName,
         lastName: doc.lastName,
-        avatarUrl: doc.avatarUrl,
-        campus: doc.campus,
-        year: doc.year || '1st Year',
-        batch: doc.batch,
+        avatarUrl: doc.avatarUrl || doc.photoURL || '',
+        campus: doc.campus || 'MSOT Ghaziabad',
+        year: doc.year || doc.yearOfStudy || '1st Year',
+        batch: doc.batch || doc.batchCohort || '2025-2029',
         bio: doc.bio,
         socialLinks: doc.socialLinks,
         xp: doc.xp || 0,
@@ -216,7 +216,7 @@ function getInitialStoredProfile(): UserProfile | null {
         gamesPlayed: doc.gamesPlayed || 0,
         infiniteTraceStreak: doc.infiniteTraceStreak || 0,
         role: doc.role,
-        isSetupComplete: Boolean(doc.isSetupComplete),
+        isSetupComplete: Boolean(doc.isRegistered ?? doc.isSetupComplete),
         createdAt: doc.createdAt,
       };
     }
@@ -263,13 +263,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const profile: UserProfile = {
             uid: docData.uid || uid,
             email: docData.email || '',
-            username: docData.username || '',
+            username: docData.username || docData.displayName || '',
             firstName: docData.firstName || '',
             lastName: docData.lastName || '',
             avatarUrl: docData.avatarUrl || docData.photoURL || '',
             campus: docData.campus || 'MSOT Ghaziabad',
-            year: docData.year || '1st Year',
-            batch: docData.batch || '2025-2029',
+            year: docData.year || docData.yearOfStudy || '1st Year',
+            batch: docData.batch || docData.batchCohort || '2025-2029',
             bio: docData.bio,
             socialLinks: docData.socialLinks,
             xp: xpVal,
@@ -277,7 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             gamesPlayed: docData.gamesPlayed ?? 0,
             infiniteTraceStreak: docData.infiniteTraceStreak ?? 0,
             role: docData.role || 'cadet',
-            isSetupComplete: Boolean(docData.isRegistered ?? docData.isSetupComplete ?? true),
+            isSetupComplete: Boolean(docData.isRegistered ?? docData.isSetupComplete ?? (docData.campus && (docData.username || docData.displayName))),
             createdAt: docData.createdAt || new Date().toISOString(),
           };
           setUserProfile(profile);
@@ -301,13 +301,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const profile: UserProfile = {
           uid: localDoc.uid,
           email: localDoc.email,
-          username: localDoc.username,
+          username: localDoc.username || localDoc.displayName || 'Cadet',
           firstName: localDoc.firstName,
           lastName: localDoc.lastName,
-          avatarUrl: localDoc.avatarUrl,
-          campus: localDoc.campus,
-          year: localDoc.year || '1st Year',
-          batch: localDoc.batch,
+          avatarUrl: localDoc.avatarUrl || localDoc.photoURL || '',
+          campus: localDoc.campus || 'MSOT Ghaziabad',
+          year: localDoc.year || (localDoc as unknown as { yearOfStudy?: string }).yearOfStudy || '1st Year',
+          batch: localDoc.batch || (localDoc as unknown as { batchCohort?: string }).batchCohort || '2025-2029',
           bio: localDoc.bio,
           socialLinks: localDoc.socialLinks,
           xp: xpVal,
@@ -315,7 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           gamesPlayed: localDoc.gamesPlayed,
           infiniteTraceStreak: localDoc.infiniteTraceStreak,
           role: localDoc.role,
-          isSetupComplete: localDoc.isSetupComplete,
+          isSetupComplete: Boolean(localDoc.isRegistered ?? localDoc.isSetupComplete ?? true),
           createdAt: localDoc.createdAt,
         };
         setUserProfile(profile);
@@ -478,7 +478,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               localStorage.setItem('avenir_firestore_users_v1', JSON.stringify(localUsers));
             }
           }
-        } catch {}
+        } catch {
+          // Ignore cache sync error
+        }
       }
 
       const isCadetRegistered = Boolean(
@@ -795,6 +797,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: currentUser.email,
       displayName: profileData.username || currentUser.displayName,
       photoURL: profileData.avatarUrl || currentUser.photoURL,
+      year: profileData.year,
+      yearOfStudy: profileData.year,
+      batch: profileData.batch,
+      batchCohort: profileData.batch,
       role: isUserAdmin ? 'admin' : (userProfile?.role || 'cadet'),
       isRegistered: true,
       isSetupComplete: true,
@@ -888,6 +894,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await setDoc(
         userRef,
         {
+          uid: currentUser.uid,
+          role: userProfile?.role || (currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'cadet'),
           username: trimmed,
           displayName: trimmed,
           updatedAt: now,
@@ -904,7 +912,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localUsers[currentUser.uid].updatedAt = now;
           localStorage.setItem('avenir_firestore_users_v1', JSON.stringify(localUsers));
         }
-      } catch {}
+      } catch {
+        // Ignore cache storage error
+      }
 
       // 3. Synchronize userProfile in state and local storage
       if (userProfile) {
@@ -912,7 +922,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUserProfile(nextProfile);
         try {
           localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(nextProfile));
-        } catch {}
+        } catch {
+          // Ignore storage error
+        }
       }
 
       // 4. Synchronize currentUser in state and local storage
@@ -920,7 +932,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentUser(updatedUser);
       try {
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
-      } catch {}
+      } catch {
+        // Ignore storage error
+      }
 
       return { success: true };
     } catch (err: unknown) {

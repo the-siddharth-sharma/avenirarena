@@ -9,10 +9,14 @@ export interface UserProfileDoc {
   firstName: string;
   lastName: string;
   username: string;
+  displayName?: string;
   avatarUrl: string;
+  photoURL?: string;
   campus: string;
   year?: string;
+  yearOfStudy?: string;
   batch: string;
+  batchCohort?: string;
   bio?: string;
   xp: number;
   academicXP?: number;
@@ -24,6 +28,7 @@ export interface UserProfileDoc {
   };
   role: 'admin' | 'cadet' | 'faculty';
   isSetupComplete: boolean;
+  isRegistered?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -233,7 +238,7 @@ export const firestoreService = {
       avatarUrl: data.avatarUrl || existing.avatarUrl || '',
       campus: data.campus || existing.campus || 'MSOT Ghaziabad',
       year: data.year || existing.year || '1st',
-      batch: data.batch || existing.batch || '2026-2030',
+      batch: data.batch || (data as unknown as { batchCohort?: string }).batchCohort || existing.batch || '2025-2029',
       bio: data.bio || existing.bio || 'Cadet Operative in AVENIR ARENA',
       xp: typeof data.xp === 'number' ? data.xp : (existing.xp || 0),
       academicXP: typeof data.academicXP === 'number' ? data.academicXP : (existing.academicXP || existing.xp || 0),
