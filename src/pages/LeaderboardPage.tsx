@@ -35,7 +35,7 @@ import {
   type ArenaEntry,
   type LeaderboardViewTab,
 } from '@/engine/competitiveArena';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { fetchRealtimeCadets } from '@/firebaseConfig';
@@ -118,7 +118,6 @@ export function LeaderboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch top 10 users from Firestore ordered by academicXP descending
   // Real-time synchronization of users from Firestore & Global Search source, ranked by XP & Hardwork
   useEffect(() => {
     let isMounted = true;
@@ -151,6 +150,7 @@ export function LeaderboardPage() {
               xp: effectiveXP,
               gamesPlayed: Number(data.gamesPlayed || 0),
               streak: Number(data.infiniteTraceStreak || data.streak || 0),
+              weeklyGrowthPct: Number(data.weeklyGrowthPct || Math.min(100, Math.max(12, Math.floor((effectiveXP % 450) / 4.5)))),
               role: data.role || 'cadet',
             });
           });
@@ -160,6 +160,7 @@ export function LeaderboardPage() {
         const searchCadets = await fetchRealtimeCadets();
         searchCadets.forEach((c) => {
           if (!cadetMap.has(c.uid)) {
+            const effectiveXP = Number(c.academicXP ?? c.xp ?? 0);
             cadetMap.set(c.uid, {
               id: c.uid,
               uid: c.uid,
@@ -168,10 +169,11 @@ export function LeaderboardPage() {
               avatarUrl: c.avatarUrl || '',
               campus: c.campus || 'MSOT Ghaziabad',
               batch: c.batch || '2025-2029',
-              academicXP: c.academicXP,
-              xp: c.xp,
-              gamesPlayed: c.gamesPlayed,
-              streak: c.infiniteTraceStreak,
+              academicXP: effectiveXP,
+              xp: effectiveXP,
+              gamesPlayed: Number(c.gamesPlayed || 0),
+              streak: Number(c.infiniteTraceStreak || 0),
+              weeklyGrowthPct: Math.min(100, Math.max(12, Math.floor((effectiveXP % 450) / 4.5))),
               role: c.role || 'cadet',
             });
           }
@@ -182,6 +184,7 @@ export function LeaderboardPage() {
           const currentXP = Number(userProfile?.academicXP ?? userProfile?.xp ?? 0);
           const currentName = userProfile?.username || currentUser.displayName || 'Cadet Operative';
           const existing = cadetMap.get(currentUser.uid) || {};
+          const currentStreak = Number(userProfile?.infiniteTraceStreak ?? existing.streak ?? 0);
           cadetMap.set(currentUser.uid, {
             ...existing,
             id: currentUser.uid,
@@ -194,7 +197,8 @@ export function LeaderboardPage() {
             academicXP: currentXP,
             xp: currentXP,
             gamesPlayed: Number(userProfile?.gamesPlayed ?? existing.gamesPlayed ?? 0),
-            streak: Number(userProfile?.infiniteTraceStreak ?? existing.streak ?? 0),
+            streak: currentStreak,
+            weeklyGrowthPct: Number(userProfile?.weeklyGrowthPct ?? existing.weeklyGrowthPct ?? 32),
             role: userProfile?.role || 'cadet',
           });
         }
@@ -246,6 +250,20 @@ export function LeaderboardPage() {
               (cadet.uid === currentUser.uid || cadet.id === currentUser.uid || cadet.email === currentUser.email)
           );
 
+          const streak = Number(cadet.streak ?? 0);
+          const weeklyGrowthPct = Number(cadet.weeklyGrowthPct ?? 25);
+
+          const badges: StudentBadge[] = [];
+          if (streak >= 7 && LEADERBOARD_BADGES['Consistent Player']) {
+            badges.push(LEADERBOARD_BADGES['Consistent Player']);
+          }
+          if (weeklyGrowthPct >= 30 && LEADERBOARD_BADGES['Consistent Learning Growth']) {
+            badges.push(LEADERBOARD_BADGES['Consistent Learning Growth']);
+          }
+          if ((rank <= 3 || effectiveXP >= 1500) && LEADERBOARD_BADGES['Master Learner']) {
+            badges.push(LEADERBOARD_BADGES['Master Learner']);
+          }
+
           return {
             id: cadet.uid || cadet.id,
             rank,
@@ -264,7 +282,10 @@ export function LeaderboardPage() {
             zone: rank <= 3 ? 'promotion' : rank >= 8 ? 'relegation' : 'safe',
             zoneLabel: rank <= 3 ? 'Promotion Zone' : rank >= 8 ? 'Relegation Risk' : 'Safe Tier',
             gamesPlayed: cadet.gamesPlayed,
-            streak: cadet.streak,
+            streak,
+            streakDays: streak,
+            weeklyGrowthPct,
+            badges,
           };
         });
 
@@ -279,7 +300,6 @@ export function LeaderboardPage() {
         console.warn('[AVENIR ARENA LEADERBOARD] Sync error:', err);
         if (isMounted) setIsLoading(false);
       }
-
     }
 
     // Initial load
@@ -329,37 +349,106 @@ export function LeaderboardPage() {
 
   // Purely dynamic Firestore entries (ordered by academicXP descending)
   const baseEntries = useMemo(() => {
-    return firestoreEntries.map((entry) => ({
-      ...entry,
-      isCurrentUser: Boolean(
+    return firestoreEntries.map((entry) => {
+      const isCurrent = Boolean(
         currentUser &&
           (entry.id === currentUser.uid ||
             (entry as any).uid === currentUser.uid ||
             (currentUser.email && (entry as any).email === currentUser.email))
-      ),
-    }));
-  }, [firestoreEntries, currentUser]);
-  const filteredEntries = baseEntries.filter((entry) => {
-    if (campusFilter !== 'all' && entry.campus !== campusFilter) return false;
-    if (leagueFilter !== 'all' && entry.leagueTier !== leagueFilter) return false;
+      );
+      return {
+        ...entry,
+        isCurrentUser: isCurrent,
+        displayName: isCurrent && studentPref.anonymous ? 'Anonymous Scholar' : entry.displayName,
+        avatarInitials: isCurrent && studentPref.anonymous ? '?' : entry.avatarInitials,
+      };
+    });
+  }, [firestoreEntries, currentUser, studentPref.anonymous]);
+
+  const filteredEntries = useMemo(() => {
+    let list = baseEntries;
+
+    if (studentPref.optedOut) {
+      list = list.filter((entry) => !entry.isCurrentUser);
+    }
+
+    if (campusFilter !== 'all') {
+      list = list.filter((entry) => entry.campus === campusFilter);
+    }
+    if (leagueFilter !== 'all') {
+      list = list.filter((entry) => entry.leagueTier === leagueFilter);
+    }
     if (batchFilter === 'my-batch') {
       const myBatch = userProfile?.batch || selectedStudent?.batch || '';
-      if (myBatch && !entry.batch.includes(myBatch.slice(0, 4))) return false;
+      if (myBatch) {
+        list = list.filter((entry) => entry.batch.includes(myBatch.slice(0, 4)));
+      }
     }
-    return true;
-  });
 
-  const currentStudentEntry = filteredEntries.find((e) => e.isCurrentUser) || null;
+    // Sort entries according to activeTab and scope
+    const sorted = [...list].sort((a, b) => {
+      if (activeTab === 'consistent-player') {
+        const streakA = a.streakDays ?? a.streak ?? 0;
+        const streakB = b.streakDays ?? b.streak ?? 0;
+        if (streakB !== streakA) return streakB - streakA;
+        return b.totalXP - a.totalXP;
+      }
+      if (activeTab === 'learning-growth') {
+        const growthA = a.weeklyGrowthPct ?? 0;
+        const growthB = b.weeklyGrowthPct ?? 0;
+        if (growthB !== growthA) return growthB - growthA;
+        return b.totalXP - a.totalXP;
+      }
+      // 'overall' tab:
+      const scoreA = scope === 'weekly' ? (a.weeklyXP ?? a.totalXP) : a.totalXP;
+      const scoreB = scope === 'weekly' ? (b.weeklyXP ?? b.totalXP) : b.totalXP;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      if (b.level !== a.level) return b.level - a.level;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+    // Reassign ranks and zones according to active view
+    return sorted.map((entry, index) => {
+      const rank = index + 1;
+      const tier = entry.leagueTier || 'gold';
+      const config = LEAGUE_CONFIGS[tier];
+      const zone: ArenaEntry['zone'] =
+        rank <= (config?.promotionCount ?? 3)
+          ? 'promotion'
+          : rank >= 8
+          ? 'relegation'
+          : 'safe';
+      const zoneLabel =
+        zone === 'promotion'
+          ? 'Promotion Zone'
+          : zone === 'relegation'
+          ? 'Relegation Risk'
+          : 'Safe Tier';
+
+      return {
+        ...entry,
+        rank,
+        zone,
+        zoneLabel,
+      };
+    });
+  }, [baseEntries, studentPref.optedOut, campusFilter, leagueFilter, batchFilter, userProfile?.batch, selectedStudent?.batch, activeTab, scope]);
+
+  const currentStudentEntry = useMemo(() => {
+    return baseEntries.find((e) => e.isCurrentUser) || null;
+  }, [baseEntries]);
 
   // Apply search query filter if provided
-  const displayedEntries = searchQuery.trim()
-    ? entries.filter(
-        (e) =>
-          e.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          e.batch.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          e.campus.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : entries;
+  const displayedEntries = useMemo(() => {
+    if (!searchQuery.trim()) return filteredEntries;
+    const q = searchQuery.toLowerCase();
+    return filteredEntries.filter(
+      (e) =>
+        e.displayName.toLowerCase().includes(q) ||
+        e.batch.toLowerCase().includes(q) ||
+        e.campus.toLowerCase().includes(q)
+    );
+  }, [filteredEntries, searchQuery]);
 
   const toggleAnonymity = () => {
     setStudentPref((prev) => ({ ...prev, anonymous: !prev.anonymous }));
@@ -371,10 +460,13 @@ export function LeaderboardPage() {
 
   const handleSimulateRollover = () => {
     const result = executeWeeklyRollover(currentUser?.uid || 'cadet', firestoreEntries);
+    if (result.newTier) {
+      setStudentPref((prev) => ({ ...prev, tier: result.newTier }));
+    }
     setRolloverNotice(result.message);
   };
 
-  const currentTierConfig = LEAGUE_CONFIGS[userTier];
+  const currentTierConfig = LEAGUE_CONFIGS[studentPref.tier] || LEAGUE_CONFIGS[userTier];
 
   // Helper for rank change indicator
   const renderRankChange = (change: number) => {
@@ -460,8 +552,12 @@ export function LeaderboardPage() {
           <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start sm:items-center gap-4">
               <StudentAvatar
-                initials={currentUser ? (userProfile?.username || currentUser.displayName || 'AA').slice(0, 2).toUpperCase() : (studentPref.anonymous ? '?' : selectedStudent.avatarInitials)}
-                color={selectedStudent.avatarColor}
+                initials={
+                  currentUser
+                    ? (studentPref.anonymous ? '?' : (userProfile?.username || currentUser.displayName || 'AA').slice(0, 2).toUpperCase())
+                    : (studentPref.anonymous ? '?' : (selectedStudent?.avatarInitials || 'AA'))
+                }
+                color={selectedStudent?.avatarColor || '#D4AF37'}
                 size="xl"
                 ring
               />
@@ -485,15 +581,15 @@ export function LeaderboardPage() {
 
                 <h2 className="text-xl sm:text-2xl font-display font-bold text-ivory mt-1">
                   {currentUser
-                    ? (userProfile?.username || currentUser.displayName)
-                    : (studentPref.anonymous ? 'Anonymous Scholar' : selectedStudent.displayName)}
+                    ? (studentPref.anonymous ? 'Anonymous Scholar' : (userProfile?.username || currentUser.displayName))
+                    : (studentPref.anonymous ? 'Anonymous Scholar' : (selectedStudent?.displayName || 'Scholar'))}
                 </h2>
                 <p className="text-xs text-muted mt-0.5">
-                  {userProfile?.batch || selectedStudent.batch} • {userProfile?.campus || selectedStudent.campus}
+                  {(userProfile?.batch || selectedStudent?.batch || '2025-2029')} • {(userProfile?.campus || selectedStudent?.campus || 'MSOT Ghaziabad')}
                 </p>
 
                 {/* Active Student Badges */}
-                {selectedStudent.badges && selectedStudent.badges.length > 0 && (
+                {selectedStudent?.badges && selectedStudent.badges.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
                     {selectedStudent.badges.map((badge) => (
                       <BadgeChip
@@ -513,39 +609,39 @@ export function LeaderboardPage() {
 
             {/* Position & Zone Status */}
             <div className="w-full sm:w-auto text-left sm:text-right border-t sm:border-t-0 pt-3 sm:pt-0 border-line">
-              {filteredEntries.find((e) => e.isCurrentUser) || currentStudentEntry ? (
-                (() => {
-                  const myEntry = filteredEntries.find((e) => e.isCurrentUser) || currentStudentEntry;
-                  const myXP = userProfile?.academicXP ?? userProfile?.xp ?? myEntry?.totalXP ?? 0;
-                  return (
-                    <>
-                      <div className="flex sm:justify-end items-center gap-2">
-                        <span className="text-2xl font-display font-bold text-ivory">
-                          Rank #{myEntry?.rank ?? 'Top 10'}
-                        </span>
-                        {renderRankChange(myEntry?.rankChange ?? 0)}
-                      </div>
-                      <p className="text-xs font-mono text-gold-400 mt-0.5">
-                        {myXP.toLocaleString()} Academic XP
-                      </p>
-                      <div className="mt-2">
-                        <span
-                          className={`badge text-[11px] ${
-                            myEntry?.zone === 'promotion'
-                              ? 'border border-gold-400/40 bg-gold-400/10 text-gold-400'
-                              : myEntry?.zone === 'relegation'
-                              ? 'border border-crimson-400/40 bg-crimson-400/10 text-crimson-400'
-                              : 'border border-line bg-elevated text-muted'
-                          }`}
-                        >
-                          {myEntry?.zone === 'promotion' && '↑ '}
-                          {myEntry?.zone === 'relegation' && '↓ '}
-                          {myEntry?.zoneLabel || 'Active Standing'}
-                        </span>
-                      </div>
-                    </>
-                  );
-                })()
+              {!studentPref.optedOut && currentStudentEntry ? (
+                <>
+                  <div className="flex sm:justify-end items-center gap-2">
+                    <span className="text-2xl font-display font-bold text-ivory">
+                      Rank #{currentStudentEntry.rank}
+                    </span>
+                    {renderRankChange(currentStudentEntry.rankChange ?? 0)}
+                  </div>
+                  <p className="text-xs font-mono text-gold-400 mt-0.5">
+                    {activeTab === 'consistent-player'
+                      ? `🔥 ${currentStudentEntry.streakDays ?? currentStudentEntry.streak ?? 0} Day Streak`
+                      : activeTab === 'learning-growth'
+                      ? `📈 +${currentStudentEntry.weeklyGrowthPct ?? 0}% Growth Rate`
+                      : scope === 'weekly'
+                      ? `+${(currentStudentEntry.weeklyXP ?? 0).toLocaleString()} Weekly XP`
+                      : `${(userProfile?.academicXP ?? userProfile?.xp ?? currentStudentEntry.totalXP).toLocaleString()} Academic XP`}
+                  </p>
+                  <div className="mt-2">
+                    <span
+                      className={`badge text-[11px] ${
+                        currentStudentEntry.zone === 'promotion'
+                          ? 'border border-gold-400/40 bg-gold-400/10 text-gold-400'
+                          : currentStudentEntry.zone === 'relegation'
+                          ? 'border border-crimson-400/40 bg-crimson-400/10 text-crimson-400'
+                          : 'border border-line bg-elevated text-muted'
+                      }`}
+                    >
+                      {currentStudentEntry.zone === 'promotion' && '▲ '}
+                      {currentStudentEntry.zone === 'relegation' && '▼ '}
+                      {currentStudentEntry.zoneLabel || 'Active Standing'}
+                    </span>
+                  </div>
+                </>
               ) : (
                 <div className="text-sm text-muted">
                   <p>You are currently opted out of public rankings.</p>
@@ -637,7 +733,7 @@ export function LeaderboardPage() {
               aria-label="Filter by Batch"
             >
               <option value="all">All Batches</option>
-              <option value="my-batch">My Batch ({selectedStudent.batch.split('—')[0].trim()})</option>
+              <option value="my-batch">My Batch ({(userProfile?.batch || selectedStudent?.batch || '2025-2029').split('—')[0].trim()})</option>
             </select>
 
             {/* Campus Filter */}
@@ -711,7 +807,7 @@ export function LeaderboardPage() {
         </Card>
       )}
 
-      {/* Sleek Futuristic Loading State & Dynamic Firestore Standings */}
+      {/* Sleek Futuristic Loading State & Dynamic Standings */}
       {isLoading ? (
         <Card className="py-20 my-6 flex flex-col items-center justify-center text-center relative overflow-hidden border border-gold-400/30 bg-graphite/90 shadow-2xl">
           <div className="absolute inset-0 bg-radial-gradient from-gold-400/10 to-transparent pointer-events-none" />
@@ -726,142 +822,192 @@ export function LeaderboardPage() {
             <span>Synchronizing Multiplayer Arena Standings</span>
           </div>
           <p className="text-sm font-display font-medium text-ivory">
-            Querying Top 10 Contenders from Firestore
+            Querying Contenders from Firestore
           </p>
           <p className="text-xs text-muted font-mono mt-1">
-            Ordered strictly by Academic XP (descending)
+            Ordered strictly by Academic XP & Hardwork
           </p>
         </Card>
       ) : (
         <>
-          {/* Podium (Top 3) */}
-          {filteredEntries.length >= 3 && (
+          {/* Metric Categories Switcher Tabs & Competitor Search */}
+          <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-md border border-line bg-graphite p-1 no-scrollbar">
+              <button
+                onClick={() => setActiveTab('overall')}
+                className={`tab-button flex items-center gap-2 text-xs font-semibold ${
+                  activeTab === 'overall' ? 'tab-active' : 'tab-inactive'
+                }`}
+              >
+                <Trophy className="w-3.5 h-3.5 text-gold-400" />
+                <span>Overall XP Ranking</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('consistent-player')}
+                className={`tab-button flex items-center gap-2 text-xs font-semibold ${
+                  activeTab === 'consistent-player' ? 'tab-active' : 'tab-inactive'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5 text-amber-400" />
+                <span>Consistent Player</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('learning-growth')}
+                className={`tab-button flex items-center gap-2 text-xs font-semibold ${
+                  activeTab === 'learning-growth' ? 'tab-active' : 'tab-inactive'
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Consistent Learning Growth</span>
+              </button>
+            </div>
+
+            {/* Competitor Search */}
+            <div className="relative min-w-[200px] max-w-xs">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search competitor by name/campus..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-graphite border border-line rounded-md pl-9 pr-3 py-1.5 text-xs text-ivory placeholder:text-muted/60 outline-none focus:border-gold-400 transition-colors"
+                aria-label="Search competitors"
+              />
+            </div>
+          </div>
+
+          {/* View Category Context Banner */}
+          <div className="mb-6 flex items-center justify-between gap-3 p-3 rounded-md bg-graphite border border-line text-xs">
+            <div className="flex items-center gap-2">
+              {activeTab === 'consistent-player' ? (
+                <>
+                  <Flame className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div>
+                    <span className="text-ivory font-medium">Consistent Player Board: </span>
+                    <span className="text-muted">
+                      Recognizes habit constancy and daily study rhythm. Ranked by consecutive active study streak and daily completion history.
+                    </span>
+                  </div>
+                </>
+              ) : activeTab === 'learning-growth' ? (
+                <>
+                  <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="text-ivory font-medium">Consistent Learning Growth Board: </span>
+                    <span className="text-muted">
+                      Celebrates learning velocity and academic acceleration. Ranked by XP progression rate (%) compared to previous cycle.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Trophy className="w-4 h-4 text-gold-400 shrink-0" />
+                  <div>
+                    <span className="text-ivory font-medium">Overall XP Board: </span>
+                    <span className="text-muted">
+                      Global cohort standings based on total experience accumulated across quests, daily quizzes, and code challenges.
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+            <span className="text-[10px] font-mono text-muted uppercase hidden lg:inline-block shrink-0">
+              {displayedEntries.length} {displayedEntries.length === 1 ? 'competitor' : 'competitors'}
+            </span>
+          </div>
+
+          {/* Podium (Top 3) for Current View */}
+          {displayedEntries.length >= 3 && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
               {[1, 0, 2].map((podiumIdx) => {
-                const entry = filteredEntries[podiumIdx];
+                const entry = displayedEntries[podiumIdx];
                 if (!entry) return null;
                 const isFirst = entry.rank === 1;
                 const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
 
-          <div className="divide-y divide-line">
-            {displayedEntries.map((entry) => {
-              const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
+                return (
+                  <Card
+                    key={entry.id}
+                    className={`text-center cursor-pointer hover:border-gold-400/60 transition-all ${
+                      isFirst
+                        ? 'border-gold-400/40 bg-gradient-to-b from-gold-400/10 to-transparent sm:scale-105 z-10'
+                        : ''
+                    }`}
+                    onClick={() => {
+                      window.location.hash = `/player/${entry.id}`;
+                    }}
+                  >
+                    <div className="flex justify-center mb-2.5">{rankIcon(entry.rank)}</div>
 
-              return (
-                <div
-                  key={entry.id}
-                  className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${
-                    entry.isCurrentUser
-                      ? 'bg-gold-400/10 border-l-4 border-gold-400'
-                      : 'hover:bg-elevated'
-                  }`}
-                >
-                  {/* Left: Rank & Competitor Details */}
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-12 flex flex-col items-center justify-center shrink-0">
-                      {rankIcon(entry.rank)}
-                      <div className="mt-0.5">{renderRankChange(entry.rankChange ?? 0)}</div>
+                    <div className="flex justify-center">
+                      <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="lg" />
                     </div>
 
-                    <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="md" />
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-ivory truncate">{entry.displayName}</p>
-                        {entry.isCurrentUser && (
-                          <span className="badge bg-gold-400/20 text-gold-400 text-[10px]">You</span>
-                        )}
-                        {entry.isDemo && (
-                          <span className="text-[9px] font-mono text-muted/60 uppercase">Cohort</span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted truncate">
-                        Level {entry.level} • {entry.batch} • {entry.campus}
-                      </p>
-
-                      {/* Active Title Badges */}
-                      {entry.badges && entry.badges.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                          {entry.badges.map((b) => (
-                            <BadgeChip
-                              key={b.title}
-                              badge={b}
-                              isHighlighted={
-                                (activeTab === 'consistent-player' && b.title === 'Consistent Player') ||
-                                (activeTab === 'learning-growth' && b.title === 'Consistent Learning Growth')
-                              }
-                            />
-                          ))}
-                        </div>
+                    <div className="mt-3 flex items-center justify-center gap-1.5">
+                      <p className="font-display font-semibold text-ivory truncate">{entry.displayName}</p>
+                      {entry.isCurrentUser && (
+                        <span className="badge bg-gold-400/20 text-gold-400 text-[9px]">You</span>
                       )}
                     </div>
-                  </div>
 
-                  {/* Right: Zone & Metric Column */}
-                  <div className="flex items-center gap-6 sm:gap-12 shrink-0">
-                    {/* Zone Badge (on md+ screens) */}
-                    <div className="hidden md:flex flex-col items-end">
+                    <div className="flex items-center justify-center gap-2 mt-1">
                       <span
-                        className="text-[10px] font-semibold px-2 py-0.5 rounded"
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
                         style={{ backgroundColor: tierConfig.badgeBg, color: tierConfig.color }}
                       >
-                        {tierConfig.name}
+                        {tierConfig.name.split(' ')[0]}
                       </span>
-                      {scope === 'weekly' && (
-                        <span
-                          className={`text-[10px] font-mono mt-0.5 ${
-                            entry.zone === 'promotion'
-                              ? 'text-gold-400'
-                              : entry.zone === 'relegation'
-                              ? 'text-crimson-400'
-                              : 'text-muted'
-                          }`}
-                        >
-                          {entry.zone === 'promotion' && '▲ Promotes'}
-                          {entry.zone === 'relegation' && '▼ Relegates'}
-                          {entry.zone === 'safe' && '• Holds'}
-                        </span>
-                      )}
+                      <span className="text-xs text-muted">Lvl {entry.level}</span>
+                      {renderRankChange(entry.rankChange ?? 0)}
                     </div>
 
-                    {/* Metric Column */}
-                    <div className="text-right w-28">
+                    {/* Metric Display according to active view */}
+                    <div className="mt-2.5">
                       {activeTab === 'consistent-player' ? (
-                        <>
-                          <p className="text-sm font-mono font-bold text-amber-400 flex items-center justify-end gap-1">
-                            <Flame className="w-3.5 h-3.5" />
-                            {entry.streakDays ?? entry.streak ?? 0} Days
-                          </p>
-                          <p className="text-[10px] text-muted">active streak</p>
-                        </>
+                        <p className="text-xl font-mono font-bold text-amber-400 flex items-center justify-center gap-1">
+                          <Flame className="w-5 h-5" />
+                          {entry.streakDays ?? entry.streak ?? 0} Days
+                        </p>
                       ) : activeTab === 'learning-growth' ? (
-                        <>
-                          <p className="text-sm font-mono font-bold text-emerald-400 flex items-center justify-end gap-1">
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                            +{entry.weeklyGrowthPct ?? 0}%
-                          </p>
-                          <p className="text-[10px] text-muted">vs last cycle</p>
-                        </>
+                        <p className="text-xl font-mono font-bold text-emerald-400 flex items-center justify-center gap-1">
+                          <ArrowUpRight className="w-5 h-5" />
+                          +{entry.weeklyGrowthPct ?? 0}%
+                        </p>
                       ) : (
-                        <>
-                          <p className="text-sm font-mono font-bold text-ivory">
-                            {scope === 'weekly'
-                              ? `+${(entry.weeklyXP ?? 0).toLocaleString()}`
-                              : entry.totalXP.toLocaleString()}
-                          </p>
-                          <p className="text-[10px] text-muted">
-                            {scope === 'weekly' ? 'weekly' : 'all-time'}
-                          </p>
-                        </>
+                        <p className="text-xl font-mono font-bold text-gold-400">
+                          {scope === 'weekly'
+                            ? `+${(entry.weeklyXP ?? 0).toLocaleString()} XP`
+                            : `${entry.totalXP.toLocaleString()} XP`}
+                        </p>
                       )}
+                      <p className="text-[10px] text-muted uppercase tracking-wider mt-0.5">
+                        {activeTab === 'consistent-player'
+                          ? 'Active Study Streak'
+                          : activeTab === 'learning-growth'
+                          ? 'Knowledge Growth Rate'
+                          : scope === 'weekly'
+                          ? 'This Week'
+                          : 'Academic XP'}
+                      </p>
                     </div>
 
-                    <p className="text-xl font-mono font-bold text-gold-400 mt-2.5">
-                      {entry.totalXP.toLocaleString()} XP
-                    </p>
-                    <p className="text-[10px] text-muted uppercase tracking-wider">
-                      Academic XP
-                    </p>
+                    {/* Podium Title Badges */}
+                    {entry.badges && entry.badges.length > 0 && (
+                      <div className="flex flex-wrap justify-center gap-1 mt-3">
+                        {entry.badges.map((b) => (
+                          <BadgeChip
+                            key={b.title}
+                            badge={b}
+                            isHighlighted={
+                              (activeTab === 'consistent-player' && b.title === 'Consistent Player') ||
+                              (activeTab === 'learning-growth' && b.title === 'Consistent Learning Growth')
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
                   </Card>
                 );
               })}
@@ -869,21 +1015,29 @@ export function LeaderboardPage() {
           )}
 
           {/* Full Standings Table */}
-          {filteredEntries.length > 0 ? (
+          {displayedEntries.length > 0 ? (
             <Card className="overflow-hidden p-0">
               <div className="border-b border-line bg-elevated px-4 py-3 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted">
                 <div className="flex items-center gap-4">
                   <span className="w-12 text-center">Rank</span>
-                  <span>Competitor</span>
+                  <span>Competitor & Title Badges</span>
                 </div>
                 <div className="flex items-center gap-6 sm:gap-12">
                   <span className="hidden md:inline">Tier & Zone</span>
-                  <span className="w-24 text-right">Academic XP</span>
+                  <span className="w-28 text-right">
+                    {activeTab === 'consistent-player'
+                      ? '🔥 Streak'
+                      : activeTab === 'learning-growth'
+                      ? '📈 Growth %'
+                      : scope === 'weekly'
+                      ? 'Weekly XP'
+                      : 'Academic XP'}
+                  </span>
                 </div>
               </div>
 
               <div className="divide-y divide-line">
-                {filteredEntries.map((entry) => {
+                {displayedEntries.map((entry) => {
                   const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
 
                   return (
@@ -898,7 +1052,7 @@ export function LeaderboardPage() {
                           : 'hover:bg-elevated'
                       }`}
                     >
-                      {/* Left: Rank & Competitor */}
+                      {/* Left: Rank & Competitor Details */}
                       <div className="flex items-center gap-4 min-w-0">
                         <div className="w-12 flex flex-col items-center justify-center shrink-0">
                           {rankIcon(entry.rank)}
@@ -908,7 +1062,7 @@ export function LeaderboardPage() {
                         <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="md" />
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-sm font-medium text-ivory truncate">{entry.displayName}</p>
                             {entry.isCurrentUser && (
                               <span className="badge bg-gold-400/20 text-gold-400 text-[10px]">You</span>
@@ -918,12 +1072,28 @@ export function LeaderboardPage() {
                             )}
                           </div>
                           <p className="text-xs text-muted truncate">
-                            Level {entry.level} • {(entry as any).gamesPlayed || 0} quests • {(entry as any).streak || 0}d streak • {entry.campus}
+                            Level {entry.level} • {(entry as any).gamesPlayed || 0} quests • {(entry.streakDays ?? entry.streak ?? 0)}d streak • {entry.campus}
                           </p>
+
+                          {/* Active Title Badges */}
+                          {entry.badges && entry.badges.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                              {entry.badges.map((b) => (
+                                <BadgeChip
+                                  key={b.title}
+                                  badge={b}
+                                  isHighlighted={
+                                    (activeTab === 'consistent-player' && b.title === 'Consistent Player') ||
+                                    (activeTab === 'learning-growth' && b.title === 'Consistent Learning Growth')
+                                  }
+                                />
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Right: Zone & XP */}
+                      {/* Right: Zone & Metric Column */}
                       <div className="flex items-center gap-6 sm:gap-12 shrink-0">
                         {/* Zone Badge (on md+ screens) */}
                         <div className="hidden md:flex flex-col items-end">
@@ -933,27 +1103,53 @@ export function LeaderboardPage() {
                           >
                             {tierConfig.name}
                           </span>
-                          <span
-                            className={`text-[10px] font-mono mt-0.5 ${
-                              entry.zone === 'promotion'
-                                ? 'text-gold-400'
-                                : entry.zone === 'relegation'
-                                ? 'text-crimson-400'
-                                : 'text-muted'
-                            }`}
-                          >
-                            {entry.zone === 'promotion' && '▲ Promotes'}
-                            {entry.zone === 'relegation' && '▼ Relegates'}
-                            {entry.zone === 'safe' && '• Holds'}
-                          </span>
+                          {scope === 'weekly' && (
+                            <span
+                              className={`text-[10px] font-mono mt-0.5 ${
+                                entry.zone === 'promotion'
+                                  ? 'text-gold-400'
+                                  : entry.zone === 'relegation'
+                                  ? 'text-crimson-400'
+                                  : 'text-muted'
+                              }`}
+                            >
+                              {entry.zone === 'promotion' && '▲ Promotes'}
+                              {entry.zone === 'relegation' && '▼ Relegates'}
+                              {entry.zone === 'safe' && '• Holds'}
+                            </span>
+                          )}
                         </div>
 
-                        {/* XP Score */}
-                        <div className="text-right w-24">
-                          <p className="text-sm font-mono font-bold text-gold-400">
-                            {entry.totalXP.toLocaleString()}
-                          </p>
-                          <p className="text-[10px] text-muted">Academic XP</p>
+                        {/* Metric Column */}
+                        <div className="text-right w-28">
+                          {activeTab === 'consistent-player' ? (
+                            <>
+                              <p className="text-sm font-mono font-bold text-amber-400 flex items-center justify-end gap-1">
+                                <Flame className="w-3.5 h-3.5" />
+                                {entry.streakDays ?? entry.streak ?? 0} Days
+                              </p>
+                              <p className="text-[10px] text-muted">active streak</p>
+                            </>
+                          ) : activeTab === 'learning-growth' ? (
+                            <>
+                              <p className="text-sm font-mono font-bold text-emerald-400 flex items-center justify-end gap-1">
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                                +{entry.weeklyGrowthPct ?? 0}%
+                              </p>
+                              <p className="text-[10px] text-muted">vs last cycle</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-sm font-mono font-bold text-gold-400">
+                                {scope === 'weekly'
+                                  ? `+${(entry.weeklyXP ?? 0).toLocaleString()}`
+                                  : entry.totalXP.toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-muted">
+                                {scope === 'weekly' ? 'weekly' : 'Academic XP'}
+                              </p>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -964,8 +1160,12 @@ export function LeaderboardPage() {
           ) : (
             <Card>
               <EmptyState
-                title="No players yet"
-                message="No competitors have entered the arena rankings yet. Complete a learning quest or quiz to set the first score!"
+                title="No competitors found"
+                message={
+                  searchQuery.trim()
+                    ? `No competitors matching "${searchQuery}" found in the selected filter criteria.`
+                    : 'No competitors have entered the arena rankings matching this filter yet.'
+                }
                 icon={<Trophy className="w-8 h-8 text-gold-400" />}
               />
             </Card>
@@ -982,7 +1182,7 @@ export function LeaderboardPage() {
           <span className="text-[11px] text-muted font-mono">Achievement Titles</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {Object.values(LEADERBOARD_BADGES).map((badge) => (
+          {(Object.values(LEADERBOARD_BADGES) as StudentBadge[]).map((badge) => (
             <div
               key={badge.title}
               className="p-3 rounded border border-line bg-graphite flex flex-col justify-between"

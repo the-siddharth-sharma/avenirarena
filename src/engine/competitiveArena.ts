@@ -283,14 +283,14 @@ export function buildCompetitiveStandings(
         : 'bronze';
 
     const streakDays = isActiveCurrent
-      ? (selectedStudent.streakDays ?? selectedStudent.streak ?? peer.streakDays ?? 14)
-      : (profileMatch?.streakDays ?? profileMatch?.streak ?? peer.streakDays ?? 10);
+      ? (selectedStudent.streakDays ?? selectedStudent.streak ?? 14)
+      : (student.streakDays ?? student.streak ?? 10);
     const weeklyGrowthPct = isActiveCurrent
-      ? (selectedStudent.weeklyGrowthPct ?? peer.weeklyGrowthPct ?? 48)
-      : (profileMatch?.weeklyGrowthPct ?? peer.weeklyGrowthPct ?? 25);
+      ? (selectedStudent.weeklyGrowthPct ?? 48)
+      : (student.weeklyGrowthPct ?? 25);
     const badges = isActiveCurrent
-      ? (selectedStudent.badges ?? peer.badges ?? [])
-      : (profileMatch?.badges ?? peer.badges ?? []);
+      ? (selectedStudent.badges ?? [])
+      : (student.badges ?? []);
 
     return {
       id: student.id,
