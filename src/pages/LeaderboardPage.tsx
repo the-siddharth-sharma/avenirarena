@@ -173,7 +173,6 @@ export function LeaderboardPage() {
               gamesPlayed: c.gamesPlayed,
               streak: c.infiniteTraceStreak,
               weeklyGrowthPct: Number((c as any).weeklyGrowthPct ?? 0),
-
               role: c.role || 'cadet',
             });
           }
