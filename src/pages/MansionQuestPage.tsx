@@ -25,6 +25,7 @@ import {
 import { mansionLevels } from '@/components/SyntaxMansion/levelsData';
 import { mansionAudio } from '@/components/SyntaxMansion/mansionAudio';
 import { GamePlayerAvatar, usePlayerIdentity } from '@/components/game-core';
+import { useAuth } from '@/context/AuthContext';
 import type { ClueItem, GridPosition, MansionLevel } from '@/components/SyntaxMansion/types';
 
 interface MansionQuestPageProps {
@@ -33,6 +34,7 @@ interface MansionQuestPageProps {
 
 export function MansionQuestPage({ navigate }: MansionQuestPageProps) {
   const playerIdentity = usePlayerIdentity();
+  const { updateUserXP } = useAuth();
 
   // Level State
   const [currentLevelIndex, setCurrentLevelIndex] = useState<number>(0);
@@ -262,6 +264,7 @@ export function MansionQuestPage({ navigate }: MansionQuestPageProps) {
       if (!isAudioMuted) mansionAudio.playSuccess();
       setIsMatrixActive(true);
       setSessionXP((xp) => xp + currentLevel.xpReward);
+      updateUserXP(currentLevel.xpReward);
       setValidationError(null);
 
       // Trigger matrix cascade effect over grid before modal

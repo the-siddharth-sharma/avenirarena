@@ -63,7 +63,7 @@ const DEFAULT_STUDENT_DATA = (studentId: string): StudentCodeHouseData => ({
 });
 
 export function CodeHouseGame({ onExit, username: propUsername, avatarUrl: propAvatarUrl }: CodeHouseGameProps) {
-  const { selectedStudent } = useStudentProfiles();
+  const { selectedStudent, updateUserXP } = useStudentProfiles();
   const playerIdentity = usePlayerIdentity();
 
   const resolvedIdentity = useMemo(() => ({
@@ -325,17 +325,21 @@ export function CodeHouseGame({ onExit, username: propUsername, avatarUrl: propA
         houseAudio.playValidationSuccess();
         setGameState('success');
 
-        // Persist completion and unlock next floor
+        // Calculate and award XP directly outside state updater
         const nextFloor = (currentFloorId + 1) as FloorId;
+        const isFirstTime = !saveData.completedFloors.includes(currentFloorId);
+        const xpGain = isFirstTime ? activeFloor.quest.xpReward : 0;
+        if (xpGain > 0 && updateUserXP) {
+          updateUserXP(xpGain);
+        }
+
+        // Persist completion and unlock next floor
         persistSaveData((prev) => {
           const unlocked = new Set(prev.unlockedFloors);
           if (nextFloor <= 4) unlocked.add(nextFloor);
 
           const completed = new Set(prev.completedFloors);
-          const isFirstTime = !completed.has(currentFloorId);
           completed.add(currentFloorId);
-
-          const xpGain = isFirstTime ? activeFloor.quest.xpReward : 0;
 
           return {
             ...prev,

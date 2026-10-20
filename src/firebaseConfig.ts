@@ -15,6 +15,7 @@ export interface UserProfileDoc {
   batch: string;
   bio?: string;
   xp: number;
+  academicXP?: number;
   gamesPlayed?: number;
   infiniteTraceStreak?: number;
   socialLinks: {
@@ -38,14 +39,17 @@ export interface QuizDoc {
   createdAt: string;
 }
 
+import { db } from './firebase';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+
 // 1. Production Firebase Configuration from Environment Variables
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+export const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyA6wjAjoBTgQ13DvgVeGxSxQ83zJVqFu7E',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'avenir-arena-6fdb7.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'avenir-arena-6fdb7',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'avenir-arena-6fdb7.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '683733824929',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:683733824929:web:8e27b1905e4989f13307e0',
 };
 
 // Truth Test: Yeh line humein console mein batayegi ki key read hui ya nahi
@@ -140,21 +144,81 @@ export const firestoreService = {
    * Fetch a user profile document by UID
    */
   async getUserDoc(uid: string): Promise<UserProfileDoc | null> {
+    try {
+      const userRef = doc(db, 'users', uid);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('getUserDoc timeout')), 2500)
+      );
+      const snap = await Promise.race([getDoc(userRef), timeoutPromise]);
+      if (snap.exists()) {
+        const d = snap.data();
+        const user: UserProfileDoc = {
+          uid: snap.id,
+          email: d.email || '',
+          firstName: d.firstName || '',
+          lastName: d.lastName || '',
+          username: d.username || d.displayName || 'Cadet',
+          avatarUrl: d.avatarUrl || d.photoURL || '',
+          campus: d.campus || 'MSOT Ghaziabad',
+          year: d.year || d.yearOfStudy || '1st Year',
+          batch: d.batch || d.batchCohort || '2025-2029',
+          bio: d.bio || '',
+          xp: Number(d.academicXP ?? d.xp ?? 0),
+          gamesPlayed: d.gamesPlayed || 0,
+          infiniteTraceStreak: d.infiniteTraceStreak || 0,
+          socialLinks: d.socialLinks || { linkedin: '', other: '' },
+          role: d.role || 'cadet',
+          isSetupComplete: Boolean(d.isRegistered ?? d.isSetupComplete ?? true),
+          createdAt: d.createdAt || new Date().toISOString(),
+          updatedAt: d.updatedAt || new Date().toISOString(),
+        };
+        const users = getStoredUsers();
+        users[uid] = user;
+        saveStoredUsers(users);
+        return user;
+      }
+    } catch {
+      // Graceful fallback to cached storage on network issues
+    }
     const users = getStoredUsers();
     return users[uid] || null;
   },
 
   /**
-   * Fetch a user by UID or username
+   * Fetch a user by UID or username with full Firestore cloud lookup and local cache fallback
    */
   async getUserByUidOrUsername(identifier: string): Promise<UserProfileDoc | null> {
+    if (!identifier) return null;
+
+    // 1. Try direct UID fetch from Firestore
+    try {
+      const directDoc = await this.getUserDoc(identifier);
+      if (directDoc) return directDoc;
+    } catch {
+      // Continue to next resolution strategies
+    }
+
+    // 2. Check cached storage
     const users = getStoredUsers();
     if (users[identifier]) return users[identifier];
     const lower = identifier.toLowerCase();
     const match = Object.values(users).find(
-      (u) => u.username.toLowerCase() === lower || u.uid.toLowerCase() === lower
+      (u) => (u.username && u.username.toLowerCase() === lower) || (u.uid && u.uid.toLowerCase() === lower)
     );
-    return match || null;
+    if (match) return match;
+
+    // 3. Cloud query fallback for remote cadets
+    try {
+      const allCloudUsers = await this.getAllUsers();
+      const cloudMatch = allCloudUsers.find(
+        (u) => (u.username && u.username.toLowerCase() === lower) || (u.uid && u.uid.toLowerCase() === lower)
+      );
+      if (cloudMatch) return cloudMatch;
+    } catch {
+      // Network or timeout failure
+    }
+
+    return null;
   },
 
   /**
@@ -175,6 +239,7 @@ export const firestoreService = {
       batch: data.batch || existing.batch || '2026-2030',
       bio: data.bio || existing.bio || 'Cadet Operative in AVENIR ARENA',
       xp: typeof data.xp === 'number' ? data.xp : (existing.xp || 0),
+      academicXP: typeof data.academicXP === 'number' ? data.academicXP : (existing.academicXP || existing.xp || 0),
       gamesPlayed: typeof data.gamesPlayed === 'number' ? data.gamesPlayed : (existing.gamesPlayed || 0),
       infiniteTraceStreak:
         typeof data.infiniteTraceStreak === 'number'
@@ -246,9 +311,49 @@ export const firestoreService = {
   },
 
   /**
-   * Admin: Fetch all registered users
+   * Admin & Leaderboard: Fetch all registered users from Firestore Cloud
    */
   async getAllUsers(): Promise<UserProfileDoc[]> {
+    try {
+      const usersRef = collection(db, 'users');
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('getAllUsers timeout')), 3000)
+      );
+      const snapshot = await Promise.race([getDocs(usersRef), timeoutPromise]);
+      if (!snapshot.empty) {
+        const cloudUsers: UserProfileDoc[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            uid: docSnap.id,
+            email: d.email || '',
+            firstName: d.firstName || '',
+            lastName: d.lastName || '',
+            username: d.username || d.displayName || 'Cadet',
+            avatarUrl: d.avatarUrl || d.photoURL || '',
+            campus: d.campus || 'MSOT Ghaziabad',
+            year: d.year || d.yearOfStudy || '1st Year',
+            batch: d.batch || d.batchCohort || '2025-2029',
+            bio: d.bio || '',
+            xp: Number(d.academicXP ?? d.xp ?? 0),
+            gamesPlayed: d.gamesPlayed || 0,
+            infiniteTraceStreak: d.infiniteTraceStreak || 0,
+            socialLinks: d.socialLinks || { linkedin: '', other: '' },
+            role: d.role || 'cadet',
+            isSetupComplete: Boolean(d.isRegistered ?? d.isSetupComplete ?? true),
+            createdAt: d.createdAt || new Date().toISOString(),
+            updatedAt: d.updatedAt || new Date().toISOString(),
+          };
+        });
+        const cacheMap: Record<string, UserProfileDoc> = {};
+        cloudUsers.forEach((u) => {
+          cacheMap[u.uid] = u;
+        });
+        saveStoredUsers(cacheMap);
+        return cloudUsers;
+      }
+    } catch (err) {
+      console.warn('[AVENIR ARENA FIRESTORE] Error getting all users from Firestore:', err);
+    }
     return Object.values(getStoredUsers());
   },
 
@@ -284,3 +389,104 @@ export const firestoreService = {
     return next.length !== quizzes.length;
   },
 };
+
+export interface RealtimeCadet {
+  uid: string;
+  displayName: string;
+  photoURL?: string;
+  avatarUrl?: string;
+  email?: string;
+  campus?: string;
+  year?: string;
+  batch?: string;
+  academicXP: number;
+  xp: number;
+  gamesPlayed: number;
+  infiniteTraceStreak: number;
+  username?: string;
+  role?: string;
+  createdAt?: string;
+}
+
+/**
+ * Fetch all real registered cadets directly from Firestore users collection
+ * with resilient fallback to local storage cache. Guarantees 100% parity
+ * between Global Search and the Competitive Leaderboard.
+ */
+export async function fetchRealtimeCadets(): Promise<RealtimeCadet[]> {
+  const cadetMap = new Map<string, RealtimeCadet>();
+
+  // 1. Direct query from Firestore Cloud users collection
+  try {
+    const usersRef = collection(db, 'users');
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('fetchRealtimeCadets timeout')), 3500)
+    );
+    const snapshot = await Promise.race([getDocs(usersRef), timeoutPromise]);
+
+    snapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      const effectiveXP = Number(data.academicXP ?? data.xp ?? 0);
+      const name =
+        data.username ||
+        data.displayName ||
+        (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : `Cadet-${docSnap.id.slice(0, 4)}`);
+
+      cadetMap.set(docSnap.id, {
+        uid: docSnap.id,
+        displayName: name,
+        photoURL: data.photoURL || data.avatarUrl || '',
+        avatarUrl: data.avatarUrl || data.photoURL || '',
+        email: data.email || '',
+        campus: data.campus || 'MSOT Ghaziabad',
+        year: data.year || data.yearOfStudy || '1st Year',
+        batch: data.batch || data.batchCohort || '2025-2029',
+        academicXP: effectiveXP,
+        xp: effectiveXP,
+        gamesPlayed: Number(data.gamesPlayed || 0),
+        infiniteTraceStreak: Number(data.infiniteTraceStreak || 0),
+        username: data.username || data.displayName || '',
+        role: data.role || 'cadet',
+        createdAt: data.createdAt || new Date().toISOString(),
+      });
+    });
+  } catch (err) {
+    console.warn('[AVENIR ARENA] Direct cloud users read:', err);
+  }
+
+  // 2. Supplement from firestoreService layer (includes cached profiles)
+  try {
+    const fallbackUsers = await firestoreService.getAllUsers();
+    fallbackUsers.forEach((u) => {
+      if (!cadetMap.has(u.uid)) {
+        const effectiveXP = Number(u.xp || 0);
+        const name =
+          u.username ||
+          (u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.email.split('@')[0] || `Cadet-${u.uid.slice(0, 4)}`);
+
+        cadetMap.set(u.uid, {
+          uid: u.uid,
+          displayName: name,
+          photoURL: u.avatarUrl || '',
+          avatarUrl: u.avatarUrl || '',
+          email: u.email || '',
+          campus: u.campus || 'MSOT Ghaziabad',
+          year: u.year || '1st Year',
+          batch: u.batch || '2025-2029',
+          academicXP: effectiveXP,
+          xp: effectiveXP,
+          gamesPlayed: Number(u.gamesPlayed || 0),
+          infiniteTraceStreak: Number(u.infiniteTraceStreak || 0),
+          username: u.username || '',
+          role: u.role || 'cadet',
+          createdAt: u.createdAt || new Date().toISOString(),
+        });
+      }
+    });
+  } catch (err) {
+    console.warn('[AVENIR ARENA] Fallback users warning:', err);
+  }
+
+  return Array.from(cadetMap.values());
+}
+

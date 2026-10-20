@@ -30,9 +30,10 @@ import {
   getWeekCountdown,
   type ArenaEntry,
 } from '@/engine/competitiveArena';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
+import { fetchRealtimeCadets } from '@/firebaseConfig';
 
 const LEADERBOARD_CACHE_KEY = 'avenir_leaderboard_cache_v1';
 
@@ -61,7 +62,7 @@ export function LeaderboardPage() {
   // Rollover simulation message/modal state
   const [rolloverNotice, setRolloverNotice] = useState<string | null>(null);
 
-  // Dynamic Firestore Leaderboard State (SWR cache for 0ms reload latency)
+  // Dynamic Real-Time Leaderboard State (SWR cache for 0ms reload latency)
   const [firestoreEntries, setFirestoreEntries] = useState<ArenaEntry[]>(getInitialLeaderboardEntries);
   const [isLoading, setIsLoading] = useState<boolean>(() => getInitialLeaderboardEntries().length === 0);
 
@@ -72,107 +73,193 @@ export function LeaderboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch top 10 users from Firestore ordered by academicXP descending
+  // Real-time synchronization of users from Firestore & Global Search source, ranked by XP & Hardwork
   useEffect(() => {
     let isMounted = true;
 
-    async function fetchTop10FromFirestore() {
-      if (firestoreEntries.length === 0) {
-        setIsLoading(true);
-      }
+    async function syncLeaderboard(cloudDocs?: any[]) {
       try {
-        const usersRef = collection(db, 'users');
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Firestore leaderboard timeout')), 2500)
-        );
+        const cadetMap = new Map<string, any>();
 
-        // Fetch top 10 users strictly ordered by academicXP descending
-        let q = query(usersRef, orderBy('academicXP', 'desc'), limit(10));
-        let snapshot = await Promise.race([getDocs(q), timeoutPromise]);
+        // 1. Process cloud docs if provided by onSnapshot
+        if (cloudDocs && cloudDocs.length > 0) {
+          cloudDocs.forEach((docSnap) => {
+            const data = typeof docSnap.data === 'function' ? docSnap.data() : docSnap;
+            const uid = docSnap.id || data.uid;
+            if (!uid) return;
+            const effectiveXP = Number(data.academicXP ?? data.xp ?? 0);
+            const name =
+              data.username ||
+              data.displayName ||
+              (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : `Cadet-${uid.slice(0, 4)}`);
 
-        // Resilient fallback: If no records match academicXP, query with xp
-        if (snapshot.empty) {
-          q = query(usersRef, orderBy('xp', 'desc'), limit(10));
-          snapshot = await Promise.race([getDocs(q), timeoutPromise]);
-        }
-
-        if (isMounted) {
-          if (!snapshot.empty) {
-            const mapped: ArenaEntry[] = snapshot.docs.map((docSnap, index) => {
-              const data = docSnap.data();
-              const effectiveXP = Number(data.academicXP ?? data.xp ?? 0);
-              const displayName =
-                data.displayName ||
-                data.username ||
-                (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : `Cadet-${docSnap.id.slice(0, 4)}`);
-
-              const initials =
-                displayName
-                  .split(' ')
-                  .map((n: string) => n[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase() || 'AA';
-
-              const tier: LeagueTier =
-                effectiveXP >= 5000
-                  ? 'diamond'
-                  : effectiveXP >= 2500
-                  ? 'platinum'
-                  : effectiveXP >= 1000
-                  ? 'gold'
-                  : effectiveXP >= 400
-                  ? 'silver'
-                  : 'bronze';
-
-              const rank = index + 1;
-              const isUser = Boolean(
-                currentUser &&
-                  (docSnap.id === currentUser.uid || data.uid === currentUser.uid || data.email === currentUser.email)
-              );
-
-              return {
-                id: docSnap.id,
-                rank,
-                rankChange: 0,
-                displayName,
-                avatarInitials: initials,
-                avatarColor: '#D4AF37',
-                campus: data.campus || 'MSOT Ghaziabad',
-                batch: data.batch || '2025-2029',
-                level: Math.max(1, Math.floor(effectiveXP / 100)),
-                leagueTier: tier,
-                weeklyXP: effectiveXP,
-                totalXP: effectiveXP,
-                isCurrentUser: isUser,
-                isDemo: false,
-                zone: rank <= 3 ? 'promotion' : rank >= 8 ? 'relegation' : 'safe',
-                zoneLabel: rank <= 3 ? 'Promotion Zone' : rank >= 8 ? 'Relegation Risk' : 'Safe Tier',
-              };
+            cadetMap.set(uid, {
+              id: uid,
+              uid,
+              displayName: name,
+              photoURL: data.photoURL || data.avatarUrl || '',
+              avatarUrl: data.avatarUrl || data.photoURL || '',
+              campus: data.campus || 'MSOT Ghaziabad',
+              batch: data.batch || data.batchCohort || '2025-2029',
+              academicXP: effectiveXP,
+              xp: effectiveXP,
+              gamesPlayed: Number(data.gamesPlayed || 0),
+              streak: Number(data.infiniteTraceStreak || data.streak || 0),
+              role: data.role || 'cadet',
             });
-            setFirestoreEntries(mapped);
-            try {
-              sessionStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(mapped));
-            } catch {}
-          } else if (firestoreEntries.length === 0) {
-            setFirestoreEntries([]);
-          }
+          });
         }
-      } catch (err) {
-        console.warn('[AVENIR ARENA LEADERBOARD] Using cached leaderboard data:', err);
-      } finally {
+
+        // 2. Supplement from fetchRealtimeCadets() to ensure 100% parity with Global Search
+        const searchCadets = await fetchRealtimeCadets();
+        searchCadets.forEach((c) => {
+          if (!cadetMap.has(c.uid)) {
+            cadetMap.set(c.uid, {
+              id: c.uid,
+              uid: c.uid,
+              displayName: c.displayName,
+              photoURL: c.avatarUrl || c.photoURL || '',
+              avatarUrl: c.avatarUrl || '',
+              campus: c.campus || 'MSOT Ghaziabad',
+              batch: c.batch || '2025-2029',
+              academicXP: c.academicXP,
+              xp: c.xp,
+              gamesPlayed: c.gamesPlayed,
+              streak: c.infiniteTraceStreak,
+              role: c.role || 'cadet',
+            });
+          }
+        });
+
+        // 3. Ensure currently authenticated user is included with latest profile
+        if (currentUser) {
+          const currentXP = Number(userProfile?.academicXP ?? userProfile?.xp ?? 0);
+          const currentName = userProfile?.username || currentUser.displayName || 'Cadet Operative';
+          const existing = cadetMap.get(currentUser.uid) || {};
+          cadetMap.set(currentUser.uid, {
+            ...existing,
+            id: currentUser.uid,
+            uid: currentUser.uid,
+            displayName: currentName,
+            photoURL: userProfile?.avatarUrl || currentUser.photoURL || '',
+            avatarUrl: userProfile?.avatarUrl || currentUser.photoURL || '',
+            campus: userProfile?.campus || existing.campus || 'MSOT Ghaziabad',
+            batch: userProfile?.batch || existing.batch || '2025-2029',
+            academicXP: currentXP,
+            xp: currentXP,
+            gamesPlayed: Number(userProfile?.gamesPlayed ?? existing.gamesPlayed ?? 0),
+            streak: Number(userProfile?.infiniteTraceStreak ?? existing.streak ?? 0),
+            role: userProfile?.role || 'cadet',
+          });
+        }
+
+        const allUsers = Array.from(cadetMap.values());
+
+        // 4. Rank strictly per XP and Hardwork (Primary: XP, Secondary: Games/Quests completed, Tertiary: Streak)
+        allUsers.sort((a, b) => {
+          const xpA = Number(a.academicXP ?? a.xp ?? 0);
+          const xpB = Number(b.academicXP ?? b.xp ?? 0);
+          if (xpB !== xpA) {
+            return xpB - xpA;
+          }
+          const gamesA = Number(a.gamesPlayed ?? 0);
+          const gamesB = Number(b.gamesPlayed ?? 0);
+          if (gamesB !== gamesA) {
+            return gamesB - gamesA;
+          }
+          const streakA = Number(a.streak ?? 0);
+          const streakB = Number(b.streak ?? 0);
+          return streakB - streakA;
+        });
+
+        // 5. Map to ArenaEntry
+        const mapped: ArenaEntry[] = allUsers.map((cadet, index) => {
+          const rank = index + 1;
+          const effectiveXP = Number(cadet.academicXP ?? cadet.xp ?? 0);
+          const initials =
+            cadet.displayName
+              .split(' ')
+              .map((n: string) => n[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase() || 'AA';
+
+          const tier: LeagueTier =
+            effectiveXP >= 5000
+              ? 'diamond'
+              : effectiveXP >= 2500
+              ? 'platinum'
+              : effectiveXP >= 1000
+              ? 'gold'
+              : effectiveXP >= 400
+              ? 'silver'
+              : 'bronze';
+
+          const isUser = Boolean(
+            currentUser &&
+              (cadet.uid === currentUser.uid || cadet.id === currentUser.uid || cadet.email === currentUser.email)
+          );
+
+          return {
+            id: cadet.uid || cadet.id,
+            rank,
+            rankChange: 0,
+            displayName: cadet.displayName,
+            avatarInitials: initials,
+            avatarColor: '#D4AF37',
+            campus: cadet.campus,
+            batch: cadet.batch,
+            level: Math.max(1, Math.floor(effectiveXP / 100) + 1),
+            leagueTier: tier,
+            weeklyXP: effectiveXP,
+            totalXP: effectiveXP,
+            isCurrentUser: isUser,
+            isDemo: false,
+            zone: rank <= 3 ? 'promotion' : rank >= 8 ? 'relegation' : 'safe',
+            zoneLabel: rank <= 3 ? 'Promotion Zone' : rank >= 8 ? 'Relegation Risk' : 'Safe Tier',
+            gamesPlayed: cadet.gamesPlayed,
+            streak: cadet.streak,
+          };
+        });
+
         if (isMounted) {
+          setFirestoreEntries(mapped);
+          try {
+            sessionStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(mapped));
+          } catch {}
           setIsLoading(false);
         }
+      } catch (err) {
+        console.warn('[AVENIR ARENA LEADERBOARD] Sync error:', err);
+        if (isMounted) setIsLoading(false);
       }
     }
 
-    fetchTop10FromFirestore();
+    // Initial load
+    syncLeaderboard();
+
+    // Real-time Firestore snapshot listener
+    let unsubscribe = () => {};
+    try {
+      const usersRef = collection(db, 'users');
+      unsubscribe = onSnapshot(
+        usersRef,
+        (snap) => {
+          syncLeaderboard(snap.docs);
+        },
+        (err) => {
+          console.warn('[AVENIR ARENA LEADERBOARD] onSnapshot listener warning:', err);
+        }
+      );
+    } catch (e) {
+      console.warn('[AVENIR ARENA LEADERBOARD] Failed to attach onSnapshot:', e);
+    }
 
     return () => {
       isMounted = false;
+      unsubscribe();
     };
-  }, [currentUser]);
+  }, [currentUser, userProfile]);
 
   // Determine user's tier based on live Academic XP
   const effectiveXP = userProfile?.academicXP ?? userProfile?.xp ?? 0;
@@ -605,7 +692,9 @@ export function LeaderboardPage() {
                       >
                         {tierConfig.name.split(' ')[0]}
                       </span>
-                      <span className="text-xs text-muted">Lvl {entry.level}</span>
+                      <span className="text-xs text-muted">
+                        Lvl {entry.level} · {(entry as any).gamesPlayed || 0} activities
+                      </span>
                       {renderRankChange(entry.rankChange ?? 0)}
                     </div>
 
@@ -671,7 +760,7 @@ export function LeaderboardPage() {
                             )}
                           </div>
                           <p className="text-xs text-muted truncate">
-                            Level {entry.level} • {entry.batch} • {entry.campus}
+                            Level {entry.level} • {(entry as any).gamesPlayed || 0} quests • {(entry as any).streak || 0}d streak • {entry.campus}
                           </p>
                         </div>
                       </div>

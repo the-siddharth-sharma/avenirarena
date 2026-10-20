@@ -21,7 +21,7 @@ import { Logo } from '@/components/Logo';
 
 function App() {
   const { path, navigate } = useRouter();
-  const { currentUser, isLoading, isOnboardingRequired, isAdmin } = useAuth();
+  const { currentUser, isLoading, isOnboardingRequired, needsRegistration, isAdmin } = useAuth();
 
   const isAdminSession =
     typeof window !== 'undefined' &&
@@ -105,7 +105,7 @@ function App() {
     <>
       <AuthModal />
       {/* 3. Authenticated but NO profile -> Mandatory Registration Terminal */}
-      {isOnboardingRequired ? (
+      {(isOnboardingRequired || needsRegistration) ? (
         <OnboardingModal />
       ) : (
         /* 4. Main Portal */

@@ -31,8 +31,10 @@ import { buildCompetitiveStandings } from '@/engine/competitiveArena';
 export function DashboardPage({ navigate }: NavigateProps) {
   const { selectedStudent, students, xpTransactions } = useStudentProfiles();
   const { userProfile } = useAuth();
-  const campusDisplay = userProfile?.campus || selectedStudent.campus;
-  const batchDisplay = userProfile?.batch || selectedStudent.batch;
+  const campusDisplay = userProfile?.campus || selectedStudent.campus || 'MSOT Ghaziabad';
+  const batchDisplay = userProfile?.batch || selectedStudent.batch || '2025-2029';
+  const rawYear = userProfile?.year || selectedStudent.year || '1st Year';
+  const yearDisplay = rawYear ? (rawYear.includes('Year') ? rawYear : `${rawYear} Year`) : '1st Year';
   const dailyQuest = demoQuests.find((q) => q.frequency === 'daily' && q.status !== 'completed');
   const todayChallenge = dailyQuest || demoQuests[0];
   const recentActivities = xpTransactions.slice(0, 5);
@@ -73,7 +75,7 @@ export function DashboardPage({ navigate }: NavigateProps) {
               <p className="text-sm text-gray-400">Welcome back,</p>
               <h2 className="text-2xl font-display font-bold text-white">{selectedStudent.displayName}</h2>
               <p className="text-sm text-gray-500 mt-0.5">
-                {batchDisplay} • {campusDisplay}
+                {yearDisplay} • {batchDisplay} • {campusDisplay}
               </p>
             </div>
           </div>
@@ -133,6 +135,59 @@ export function DashboardPage({ navigate }: NavigateProps) {
           accentColor="text-ocean-400"
         />
       </div>
+
+      {/* Leaderboard preview */}
+      <Card className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display font-semibold text-white">Leaderboard Preview</h3>
+          <button
+            onClick={() => navigate('/leaderboard')}
+            className="text-sm text-accent-400 hover:text-accent-300 flex items-center gap-1 transition-colors"
+          >
+            Full leaderboard <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="space-y-1">
+          {topPlayers.length > 0 ? (
+            topPlayers.map((entry) => (
+              <div
+                key={entry.id}
+                onClick={() => navigate(`/player/${entry.id}`)}
+                className={`flex items-center gap-4 py-2.5 px-3 rounded-lg transition-colors cursor-pointer ${
+                  entry.isCurrentUser ? 'bg-accent-600/10 border border-accent-500/20' : 'hover:bg-ink-800'
+                }`}
+              >
+                <span
+                  className={`w-7 text-center font-display font-bold ${
+                    entry.rank === 1
+                      ? 'text-warning-400'
+                      : entry.rank === 2
+                      ? 'text-gray-300'
+                      : entry.rank === 3
+                      ? 'text-warning-600'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {entry.rank}
+                </span>
+                <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">
+                    {entry.displayName}
+                    {entry.isCurrentUser && <span className="text-accent-400 text-xs ml-2">(You)</span>}
+                  </p>
+                  <p className="text-xs text-gray-500">Level {entry.level} • {entry.campus || 'MSOT Ghaziabad'}</p>
+                </div>
+                <span className="text-sm font-mono text-gray-300">{entry.totalXP.toLocaleString()} XP</span>
+              </div>
+            ))
+          ) : (
+            <div className="py-6 text-center text-xs font-mono text-gray-500">
+              No players ranked yet. Complete learning activities to set the first score!
+            </div>
+          )}
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Continue learning */}
@@ -282,58 +337,6 @@ export function DashboardPage({ navigate }: NavigateProps) {
           </div>
         </Card>
       </div>
-
-      {/* Leaderboard preview */}
-      <Card className="mt-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display font-semibold text-white">Leaderboard Preview</h3>
-          <button
-            onClick={() => navigate('/leaderboard')}
-            className="text-sm text-accent-400 hover:text-accent-300 flex items-center gap-1 transition-colors"
-          >
-            Full leaderboard <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="space-y-1">
-          {topPlayers.length > 0 ? (
-            topPlayers.map((entry) => (
-              <div
-                key={entry.id}
-                className={`flex items-center gap-4 py-2.5 px-3 rounded-lg transition-colors ${
-                  entry.isCurrentUser ? 'bg-accent-600/10 border border-accent-500/20' : 'hover:bg-ink-800'
-                }`}
-              >
-                <span
-                  className={`w-7 text-center font-display font-bold ${
-                    entry.rank === 1
-                      ? 'text-warning-400'
-                      : entry.rank === 2
-                      ? 'text-gray-300'
-                      : entry.rank === 3
-                      ? 'text-warning-600'
-                      : 'text-gray-500'
-                  }`}
-                >
-                  {entry.rank}
-                </span>
-                <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">
-                    {entry.displayName}
-                    {entry.isCurrentUser && <span className="text-accent-400 text-xs ml-2">(You)</span>}
-                  </p>
-                  <p className="text-xs text-gray-500">Level {entry.level}</p>
-                </div>
-                <span className="text-sm font-mono text-gray-300">{entry.totalXP.toLocaleString()} XP</span>
-              </div>
-            ))
-          ) : (
-            <div className="py-6 text-center text-xs font-mono text-gray-500">
-              No players ranked yet. Complete learning activities to set the first score!
-            </div>
-          )}
-        </div>
-      </Card>
     </div>
   );
 }

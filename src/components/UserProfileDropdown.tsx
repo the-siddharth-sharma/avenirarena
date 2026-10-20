@@ -88,8 +88,8 @@ export function UserProfileDropdown() {
           <p className="text-xs font-semibold text-ivory truncate max-w-[120px]">
             {username}
           </p>
-          <p className="text-[10px] text-gold-400 font-mono">
-            {userProfile?.campus ? userProfile.campus.split(' ')[1] || 'Cadet' : 'Authenticated'}
+          <p className="text-[10px] text-gold-400 font-mono truncate max-w-[140px]">
+            {userProfile?.campus || 'MSOT Ghaziabad'}
           </p>
         </div>
       </button>

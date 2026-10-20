@@ -264,43 +264,36 @@ export function buildCompetitiveStandings(
   const activeStudentMap = new Map<string, StudentProfile>();
   students.forEach((s) => activeStudentMap.set(s.id, s));
 
-  // Combine peer catalog with active student profiles
-  const combinedEntries: LeaderboardEntry[] = demoLeaderboard.map((peer) => {
-    // If peer matches the active student, enrich with live reactive data
-    const isActiveCurrent = peer.id === selectedStudent.id || peer.displayName === selectedStudent.displayName;
-    const profileMatch = students.find((s) => s.displayName === peer.displayName);
-
-    const totalXP = profileMatch ? profileMatch.totalXP : peer.totalXP;
-    const level = profileMatch ? profileMatch.level : peer.level;
-    const batch = profileMatch ? profileMatch.batch : peer.batch;
-    const campus = profileMatch ? profileMatch.campus : peer.campus;
-    const avatarInitials = profileMatch ? profileMatch.avatarInitials : peer.avatarInitials;
-    const avatarColor = profileMatch ? profileMatch.avatarColor : peer.avatarColor;
-
-    // Weekly XP = baseline mock activity + any real newly completed quizzes/games this week
-    const baseWeekly = PEER_WEEKLY_XP_BASE[peer.id] || PEER_WEEKLY_XP_BASE[profileMatch?.id || ''] || 350;
-    const weeklyXP = isActiveCurrent ? baseWeekly + liveWeeklyXP : baseWeekly;
-
-    const previousRank = PREVIOUS_RANKS_BASE[peer.id] || PREVIOUS_RANKS_BASE[profileMatch?.id || ''] || peer.rank;
-
-    const peerPref = profileMatch ? getStudentLeaguePref(profileMatch.id) : null;
-    const leagueTier: LeagueTier = peerPref ? peerPref.tier : level >= 18 ? 'diamond' : level >= 15 ? 'platinum' : level >= 12 ? 'gold' : level >= 9 ? 'silver' : 'bronze';
+  // Map real active student profiles (only real registered cadets)
+  const combinedEntries: LeaderboardEntry[] = students.map((student) => {
+    const isActiveCurrent = student.id === selectedStudent.id;
+    const effectiveXP = Number(student.totalXP ?? 0);
+    const tier: LeagueTier =
+      effectiveXP >= 5000
+        ? 'diamond'
+        : effectiveXP >= 2500
+        ? 'platinum'
+        : effectiveXP >= 1000
+        ? 'gold'
+        : effectiveXP >= 400
+        ? 'silver'
+        : 'bronze';
 
     return {
-      id: profileMatch ? profileMatch.id : peer.id,
+      id: student.id,
       rank: 0, // assigned after sorting
-      displayName: isActiveCurrent && studentPref.anonymous ? 'Anonymous Scholar' : profileMatch ? profileMatch.displayName : peer.displayName,
-      level,
-      totalXP,
-      weeklyXP,
-      previousRank,
-      avatarInitials: isActiveCurrent && studentPref.anonymous ? '?' : avatarInitials,
-      avatarColor,
-      batch,
-      campus,
-      leagueTier,
+      displayName: isActiveCurrent && studentPref.anonymous ? 'Anonymous Scholar' : student.displayName,
+      level: student.level || Math.max(1, Math.floor(effectiveXP / 100) + 1),
+      totalXP: effectiveXP,
+      weeklyXP: effectiveXP,
+      previousRank: 0,
+      avatarInitials: isActiveCurrent && studentPref.anonymous ? '?' : student.avatarInitials,
+      avatarColor: student.avatarColor || '#D4AF37',
+      batch: student.batch || '2025-2029',
+      campus: student.campus || 'MSOT Ghaziabad',
+      leagueTier: tier,
       isCurrentUser: isActiveCurrent,
-      isDemo: !isActiveCurrent,
+      isDemo: false,
     };
   });
 
@@ -323,9 +316,9 @@ export function buildCompetitiveStandings(
     filtered = filtered.filter((e) => e.leagueTier === filters.leagueFilter);
   }
 
-  // Deterministic Ranking Sort:
+  // Deterministic Ranking Sort strictly by XP and Hardwork:
   // 1. Primary: XP score descending (weeklyXP if weekly, totalXP if all-time)
-  // 2. Secondary: Level descending
+  // 2. Secondary: Hardwork tie-breaker (Level / Quests completed)
   // 3. Tertiary: Alphabetical display name
   filtered.sort((a, b) => {
     const scoreA = filters.scope === 'weekly' ? (a.weeklyXP ?? 0) : a.totalXP;
