@@ -249,49 +249,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Sync profile from Firestore with timeout resilience and local caching
   const syncProfileFromFirestore = async (uid: string): Promise<UserProfile | null> => {
     try {
-      // 1. Query Firestore users collection with timeout to avoid network stalls
-      try {
-        const userRef = doc(db, 'users', uid);
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Firestore read timeout')), 2500)
-        );
-        const userSnap = await Promise.race([getDoc(userRef), timeoutPromise]);
+      // 1. Query Firestore users collection with timeout to avoid network stalls (only if authenticated)
+      if (auth.currentUser) {
+        try {
+          const userRef = doc(db, 'users', uid);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Firestore read timeout')), 2500)
+          );
+          const userSnap = await Promise.race([getDoc(userRef), timeoutPromise]);
 
-        if (userSnap.exists()) {
-          const docData = userSnap.data();
-          const xpVal = Number(docData.academicXP ?? docData.xp ?? 0);
-          const profile: UserProfile = {
-            uid: docData.uid || uid,
-            email: docData.email || '',
-            username: docData.username || docData.displayName || '',
-            firstName: docData.firstName || '',
-            lastName: docData.lastName || '',
-            avatarUrl: docData.avatarUrl || docData.photoURL || '',
-            campus: docData.campus || 'MSOT Ghaziabad',
-            year: docData.year || docData.yearOfStudy || '1st Year',
-            batch: docData.batch || docData.batchCohort || '2025-2029',
-            bio: docData.bio,
-            socialLinks: docData.socialLinks,
-            xp: xpVal,
-            academicXP: xpVal,
-            gamesPlayed: docData.gamesPlayed ?? 0,
-            infiniteTraceStreak: docData.infiniteTraceStreak ?? 0,
-            role: docData.role || 'cadet',
-            isSetupComplete: Boolean(docData.isRegistered ?? docData.isSetupComplete ?? (docData.campus && (docData.username || docData.displayName))),
-            createdAt: docData.createdAt || new Date().toISOString(),
-          };
-          setUserProfile(profile);
-          setNeedsRegistration(false);
-          try {
-            localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-            localStorage.removeItem('avenir_needs_registration');
-          } catch {
-            // Ignore storage quota errors
+          if (userSnap.exists()) {
+            const docData = userSnap.data();
+            const xpVal = Number(docData.academicXP ?? docData.xp ?? 0);
+            const profile: UserProfile = {
+              uid: docData.uid || uid,
+              email: docData.email || '',
+              username: docData.username || docData.displayName || '',
+              firstName: docData.firstName || '',
+              lastName: docData.lastName || '',
+              avatarUrl: docData.avatarUrl || docData.photoURL || '',
+              campus: docData.campus || 'MSOT Ghaziabad',
+              year: docData.year || docData.yearOfStudy || '1st Year',
+              batch: docData.batch || docData.batchCohort || '2025-2029',
+              bio: docData.bio,
+              socialLinks: docData.socialLinks,
+              xp: xpVal,
+              academicXP: xpVal,
+              gamesPlayed: docData.gamesPlayed ?? 0,
+              infiniteTraceStreak: docData.infiniteTraceStreak ?? 0,
+              role: docData.role || 'cadet',
+              isSetupComplete: Boolean(docData.isRegistered ?? docData.isSetupComplete ?? (docData.campus && (docData.username || docData.displayName))),
+              createdAt: docData.createdAt || new Date().toISOString(),
+            };
+            setUserProfile(profile);
+            setNeedsRegistration(false);
+            try {
+              localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+              localStorage.removeItem('avenir_needs_registration');
+            } catch {
+              // Ignore storage quota errors
+            }
+            return profile;
           }
-          return profile;
+        } catch (firestoreErr) {
+          console.warn('[AVENIR ARENA FIRESTORE] Direct Firestore read failed/timed out, using cache:', firestoreErr);
         }
-      } catch (firestoreErr) {
-        console.warn('[AVENIR ARENA FIRESTORE] Direct Firestore read failed/timed out, using cache:', firestoreErr);
       }
 
       // 2. Fallback to service layer
@@ -631,7 +633,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const activeUid = currentUser?.uid || initialUser?.uid;
     if (activeUid) {
       traceEngine.setActiveStudent(activeUid);
-      syncProfileFromFirestore(activeUid).catch(() => {});
+      if (auth.currentUser) {
+        syncProfileFromFirestore(activeUid).catch(() => {});
+      }
     }
 
     // Check for pending redirect result (handles redirect OAuth flow if present)

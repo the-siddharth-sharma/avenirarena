@@ -36,7 +36,7 @@ import {
   type LeaderboardViewTab,
 } from '@/engine/competitiveArena';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '@/firebase';
+import { auth, db } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { fetchRealtimeCadets } from '@/firebaseConfig';
 
@@ -285,7 +285,15 @@ export function LeaderboardPage() {
       }
     }
 
+    // Synchronize local / initial state
     syncLeaderboard();
+
+    // Only establish cloud onSnapshot stream when authenticated
+    if (!currentUser || !auth.currentUser) {
+      return () => {
+        isMounted = false;
+      };
+    }
 
     let unsubscribe = () => {};
     try {

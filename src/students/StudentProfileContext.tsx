@@ -243,6 +243,15 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
     let isMounted = true;
 
     async function syncRealProfiles() {
+      if (!currentUser) {
+        if (isMounted) {
+          setStudents(getInitialStudents());
+          setSelectedStudentId('');
+          traceEngine.setActiveStudent('');
+        }
+        return;
+      }
+
       try {
         const firestoreUsers = await fetchRealtimeCadets();
         if (!isMounted) return;

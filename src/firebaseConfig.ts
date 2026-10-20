@@ -44,7 +44,7 @@ export interface QuizDoc {
   createdAt: string;
 }
 
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 
 // 1. Production Firebase Configuration from Environment Variables
@@ -146,6 +146,11 @@ export const firestoreService = {
    * Fetch a user profile document by UID
    */
   async getUserDoc(uid: string): Promise<UserProfileDoc | null> {
+    if (!uid) return null;
+    if (!auth.currentUser) {
+      const users = getStoredUsers();
+      return users[uid] || null;
+    }
     try {
       const userRef = doc(db, 'users', uid);
       const timeoutPromise = new Promise<never>((_, reject) =>
@@ -317,6 +322,9 @@ export const firestoreService = {
    * Admin & Leaderboard: Fetch all registered users from Firestore Cloud
    */
   async getAllUsers(): Promise<UserProfileDoc[]> {
+    if (!auth.currentUser) {
+      return Object.values(getStoredUsers());
+    }
     try {
       const usersRef = collection(db, 'users');
       const timeoutPromise = new Promise<never>((_, reject) =>
@@ -417,6 +425,36 @@ export interface RealtimeCadet {
  * between Global Search and the Competitive Leaderboard.
  */
 export async function fetchRealtimeCadets(): Promise<RealtimeCadet[]> {
+  // If user is not authenticated, immediately return cached profiles
+  // without attempting unauthenticated cloud reads
+  if (!auth.currentUser) {
+    const cachedUsers = Object.values(getStoredUsers());
+    return cachedUsers.map((u) => {
+      const effectiveXP = Number(u.academicXP ?? u.xp ?? 0);
+      const name =
+        u.username ||
+        (u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.email.split('@')[0] || `Cadet-${u.uid.slice(0, 4)}`);
+
+      return {
+        uid: u.uid,
+        displayName: name,
+        photoURL: u.avatarUrl || '',
+        avatarUrl: u.avatarUrl || '',
+        email: u.email || '',
+        campus: u.campus || 'MSOT Ghaziabad',
+        year: u.year || '1st Year',
+        batch: u.batch || '2025-2029',
+        academicXP: effectiveXP,
+        xp: effectiveXP,
+        gamesPlayed: Number(u.gamesPlayed || 0),
+        infiniteTraceStreak: Number(u.infiniteTraceStreak || 0),
+        username: u.username || '',
+        role: u.role || 'cadet',
+        createdAt: u.createdAt || new Date().toISOString(),
+      };
+    });
+  }
+
   const cadetMap = new Map<string, RealtimeCadet>();
 
   // 1. Direct query from Firestore Cloud users collection

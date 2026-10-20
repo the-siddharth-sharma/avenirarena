@@ -178,6 +178,7 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
 
   // 1. Synchronize real-time community messages from Firestore Cloud
   useEffect(() => {
+    if (!currentUser) return;
     let isMounted = true;
 
     try {
@@ -232,10 +233,11 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
       console.warn('[AVENIR ARENA COMMUNITY] Error setting up messages listener:', err);
       setIsLoadingFeed(false);
     }
-  }, []);
+  }, [currentUser]);
 
   // 2. Synchronize real-time online presence from Firestore Cloud
   useEffect(() => {
+    if (!currentUser) return;
     let isMounted = true;
 
     try {

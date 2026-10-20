@@ -1,5 +1,5 @@
-import { db } from '@/firebase';
-import { collection, doc, onSnapshot, getDoc, getDocs } from 'firebase/firestore';
+import { auth, db } from '@/firebase';
+import { collection, doc, onSnapshot, getDoc } from 'firebase/firestore';
 
 export interface CadetPresence {
   uid: string;
@@ -41,48 +41,80 @@ export function formatLastSeen(lastSeen?: number): string {
 
 /**
  * Real-time listener for the entire presence collection
+ * Auth-guarded: Only connects to Firestore WebChannel stream when authenticated,
+ * preventing Safari access control aborts and permission errors on unauthenticated mount.
  */
 export function subscribeToPresence(
   onUpdate: (presenceMap: Record<string, CadetPresence>) => void
 ): () => void {
-  try {
-    const presenceCol = collection(db, 'presence');
-    const unsubscribe = onSnapshot(
-      presenceCol,
-      (snapshot) => {
-        const map: Record<string, CadetPresence> = {};
-        snapshot.docs.forEach((docSnap) => {
-          const data = docSnap.data() as CadetPresence;
-          if (data && docSnap.id) {
-            map[docSnap.id] = {
-              uid: docSnap.id,
-              username: data.username || 'Cadet',
-              avatarUrl: data.avatarUrl || '',
-              campus: data.campus || '',
-              lastSeen: data.lastSeen || 0,
-              status: data.status || 'offline',
-              updatedAt: data.updatedAt,
-            };
-          }
-        });
-        onUpdate(map);
-      },
-      (err) => {
-        console.warn('[AVENIR ARENA] Presence subscription notice:', err);
+  let isCleanedUp = false;
+  let unsubscribePresence: (() => void) | null = null;
+
+  const startListening = () => {
+    if (isCleanedUp || unsubscribePresence) return;
+    try {
+      const presenceCol = collection(db, 'presence');
+      unsubscribePresence = onSnapshot(
+        presenceCol,
+        (snapshot) => {
+          if (isCleanedUp) return;
+          const map: Record<string, CadetPresence> = {};
+          snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data() as CadetPresence;
+            if (data && docSnap.id) {
+              map[docSnap.id] = {
+                uid: docSnap.id,
+                username: data.username || 'Cadet',
+                avatarUrl: data.avatarUrl || '',
+                campus: data.campus || '',
+                lastSeen: data.lastSeen || 0,
+                status: data.status || 'offline',
+                updatedAt: data.updatedAt,
+              };
+            }
+          });
+          onUpdate(map);
+        },
+        (err) => {
+          console.warn('[AVENIR ARENA] Presence subscription notice:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('[AVENIR ARENA] Failed to subscribe to presence collection:', err);
+    }
+  };
+
+  if (auth.currentUser) {
+    startListening();
+  } else {
+    const unsubAuth = auth.onAuthStateChanged((user) => {
+      if (user && !isCleanedUp) {
+        startListening();
       }
-    );
-    return unsubscribe;
-  } catch (err) {
-    console.warn('[AVENIR ARENA] Failed to subscribe to presence collection:', err);
-    return () => {};
+    });
+
+    return () => {
+      isCleanedUp = true;
+      unsubAuth();
+      if (unsubscribePresence) {
+        unsubscribePresence();
+      }
+    };
   }
+
+  return () => {
+    isCleanedUp = true;
+    if (unsubscribePresence) {
+      unsubscribePresence();
+    }
+  };
 }
 
 /**
- * Fetch presence for a single user once
+ * Fetch presence for a single user once (auth-guarded)
  */
 export async function getSingleCadetPresence(uid: string): Promise<CadetPresence | null> {
-  if (!uid) return null;
+  if (!uid || !auth.currentUser) return null;
   try {
     const presenceRef = doc(db, 'presence', uid);
     const snap = await getDoc(presenceRef);

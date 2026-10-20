@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Search,
   X,
@@ -15,9 +15,7 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/Card';
 import { PageHeader } from '@/components/PageHeader';
-import { db } from '@/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import { firestoreService, fetchRealtimeCadets } from '@/firebaseConfig';
+import { fetchRealtimeCadets } from '@/firebaseConfig';
 import { subscribeToPresence, isCadetOnline, formatLastSeen, CadetPresence } from '@/data/presence';
 
 export interface FirestoreCadet {
