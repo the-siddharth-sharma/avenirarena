@@ -1,10 +1,17 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import type { CredentialResponse } from '@react-oauth/google';
 import { traceEngine } from '@/engine/infiniteTrace';
 import { firestoreService } from '@/firebaseConfig';
 import { doc, getDoc, setDoc, increment } from 'firebase/firestore';
-import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
+import {
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  onAuthStateChanged,
+  signOut,
+  type User as FirebaseUser,
+} from 'firebase/auth';
 import { db, auth, googleProvider } from '@/firebase';
 
 export const ADMIN_EMAIL = 'siddharthsharma2649@gmail.com';
@@ -190,16 +197,21 @@ function getInitialStoredProfile(): UserProfile | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Synchronous cache hydration ensures 0ms render latency on page reload
-  const [currentUser, setCurrentUser] = useState<User | null>(getInitialStoredUser);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(getInitialStoredProfile);
-  // Zero latency: Start with isLoading false whenever cached session exists or for guest
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const initialUser = getInitialStoredUser();
+  const initialProfile = getInitialStoredProfile();
+  const [currentUser, setCurrentUser] = useState<User | null>(initialUser);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(initialProfile);
+  // Start with isLoading true only if no cached registered session exists, allowing Firebase Auth to resolve
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialUser || !initialProfile);
   const [needsRegistration, setNeedsRegistration] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('avenir_needs_registration') === 'true';
   });
   const [error, setError] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  const isLoggingInRef = useRef<boolean>(false);
+  const processingUidRef = useRef<string | null>(null);
 
   // Sync profile from Firestore with timeout resilience and local caching
   const syncProfileFromFirestore = async (uid: string): Promise<UserProfile | null> => {
@@ -283,141 +295,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
-  // Restore authenticated session and listen to Firebase Auth in the background
-  useEffect(() => {
-    let isMounted = true;
-
-    // Immediately bind traceEngine to authenticated student if present
-    const activeUid = currentUser?.uid || getInitialStoredUser()?.uid;
-    if (activeUid) {
-      traceEngine.setActiveStudent(activeUid);
-      // Non-blocking background revalidation (Stale-While-Revalidate)
-      syncProfileFromFirestore(activeUid).catch(() => {});
-    }
-
-    // Listen to Firebase Auth state changes for persistent session across page reloads
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (!isMounted) return;
-      if (fbUser) {
-        const user: User = {
-          uid: fbUser.uid,
-          displayName: fbUser.displayName || 'Google Cadet',
-          email: fbUser.email || '',
-          photoURL:
-            fbUser.photoURL ||
-            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        };
-        setCurrentUser(user);
-        try {
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-        } catch {}
-        traceEngine.setActiveStudent(user.uid);
-
-        try {
-          const userRef = doc(db, 'users', user.uid);
-          const timeoutReadPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Firestore read timeout')), 5000)
-          );
-          const docSnap = await Promise.race([getDoc(userRef), timeoutReadPromise]);
-
-          if (isMounted) {
-            const isCadetRegistered = Boolean(
-              docSnap.exists() &&
-              (docSnap.data()?.isRegistered === true ||
-               docSnap.data()?.isSetupComplete === true ||
-               docSnap.data()?.campus)
-            );
-
-            if (!docSnap.exists() || !isCadetRegistered) {
-              setNeedsRegistration(true);
-              setUserProfile(null);
-              try {
-                localStorage.setItem('avenir_needs_registration', 'true');
-              } catch {}
-            } else {
-              setNeedsRegistration(false);
-              try {
-                localStorage.removeItem('avenir_needs_registration');
-              } catch {}
-
-              const existingData = docSnap.data();
-              const xpVal = Number(existingData.academicXP ?? existingData.xp ?? 0);
-              const streakVal = Number(existingData.infiniteTraceStreak ?? 0);
-              const isUserAdmin = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-
-              const profile: UserProfile = {
-                uid: user.uid,
-                email: user.email,
-                username: existingData.username || user.displayName,
-                firstName: existingData.firstName || '',
-                lastName: existingData.lastName || '',
-                avatarUrl: existingData.avatarUrl || user.photoURL,
-                campus: existingData.campus || 'MSOT Ghaziabad',
-                year: existingData.year || existingData.yearOfStudy || '1st Year',
-                batch: existingData.batch || existingData.batchCohort || '2025-2029',
-                bio: existingData.bio || 'Cadet in AVENIR ARENA.',
-                xp: xpVal,
-                academicXP: xpVal,
-                gamesPlayed: existingData.gamesPlayed ?? 0,
-                infiniteTraceStreak: streakVal,
-                socialLinks: existingData.socialLinks || { linkedin: '', other: '' },
-                role: existingData.role || (isUserAdmin ? 'admin' : 'cadet'),
-                isSetupComplete: true,
-                createdAt: existingData.createdAt || new Date().toISOString(),
-              };
-
-              setUserProfile(profile);
-              try {
-                localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-              } catch {}
-            }
-          }
-        } catch (err) {
-          console.error('[AVENIR ARENA AUTH] Session persistence lookup error:', err);
-          const cachedProfile = getInitialStoredProfile();
-          if (cachedProfile && (cachedProfile.isSetupComplete || cachedProfile.campus)) {
-            setUserProfile(cachedProfile);
-            setNeedsRegistration(false);
-          }
-        }
-      } else {
-        setCurrentUser(null);
-        setUserProfile(null);
-        setNeedsRegistration(false);
-        try {
-          localStorage.removeItem(AUTH_STORAGE_KEY);
-          localStorage.removeItem(PROFILE_STORAGE_KEY);
-          localStorage.removeItem('avenir_needs_registration');
-        } catch {}
-        traceEngine.setActiveStudent('');
-      }
-      setIsLoading(false);
-    });
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, []);
-
-  const openAuthModal = () => {
-    loginWithGoogle();
-  };
-  const closeAuthModal = () => setIsAuthModalOpen(false);
-  const clearError = () => setError(null);
-
   /**
-   * Check Firestore on login:
-   * If docSnap.exists() is FALSE -> New user. Route to Registration Terminal (needsRegistration: true).
-   * If docSnap.exists() is TRUE -> Returning user. Load profile and route straight to /dashboard.
+   * Authoritative Firebase Auth Resolution Handler
+   * Atomically checks Firestore /users/{uid}, updates profile and registration state,
+   * eliminates race conditions, and directs user to /dashboard or OnboardingModal.
    */
-  const handleAuthSuccess = async (user: User) => {
-    setCurrentUser(user);
-    try {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-    } catch {
-      // Ignore
+  const processAuthenticatedUser = async (fbUser: FirebaseUser | User): Promise<void> => {
+    if (!fbUser || !fbUser.uid) return;
+
+    // Prevent concurrent duplicate executions for the same user
+    if (processingUidRef.current === fbUser.uid && currentUser?.uid === fbUser.uid && userProfile) {
+      setIsLoading(false);
+      return;
     }
+    processingUidRef.current = fbUser.uid;
+    setIsLoading(true);
+
+    const user: User = {
+      uid: fbUser.uid,
+      displayName: fbUser.displayName || 'Google Cadet',
+      email: fbUser.email || '',
+      photoURL:
+        fbUser.photoURL ||
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      ...(('token' in fbUser && fbUser.token) ? { token: fbUser.token } : {}),
+    };
 
     traceEngine.setActiveStudent(user.uid);
     setIsAuthModalOpen(false);
@@ -430,29 +332,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
       const docSnap = await Promise.race([getDoc(userRef), timeoutReadPromise]);
 
+      const docData = docSnap.exists() ? docSnap.data() : null;
       const isCadetRegistered = Boolean(
-        docSnap.exists() &&
-        (docSnap.data()?.isRegistered === true ||
-         docSnap.data()?.isSetupComplete === true ||
-         docSnap.data()?.campus)
+        docData &&
+        (docData.isRegistered === true ||
+         docData.isSetupComplete === true ||
+         docData.campus)
       );
 
-      if (!docSnap.exists() || !isCadetRegistered) {
-        // 1. New user: Flag for Registration Terminal (Ingress)
-        setNeedsRegistration(true);
+      if (!docSnap.exists() || !docData || !isCadetRegistered) {
+        // 1. New user: Atomic state update -> Route to Registration Terminal
+        setCurrentUser(user);
         setUserProfile(null);
+        setNeedsRegistration(true);
+        setIsLoading(false);
+
         try {
-          localStorage.setItem('avenir_needs_registration', 'true');
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
           localStorage.removeItem(PROFILE_STORAGE_KEY);
+          localStorage.setItem('avenir_needs_registration', 'true');
         } catch {}
       } else {
-        // 2. Returning user: Load profile & route straight to /dashboard
-        setNeedsRegistration(false);
-        try {
-          localStorage.removeItem('avenir_needs_registration');
-        } catch {}
-
-        const existingData = docSnap.data();
+        // 2. Returning user: Atomic state update -> Load profile & route straight to /dashboard
+        const existingData = docData;
         const xpVal = Number(existingData.academicXP ?? existingData.xp ?? 0);
         const streakVal = Number(existingData.infiniteTraceStreak ?? 0);
         const isUserAdmin = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
@@ -478,26 +380,159 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           createdAt: existingData.createdAt || new Date().toISOString(),
         };
 
+        setCurrentUser(user);
         setUserProfile(profile);
+        setNeedsRegistration(false);
+        setIsLoading(false);
+
         try {
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
           localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+          localStorage.removeItem('avenir_needs_registration');
         } catch {}
 
-        // Route straight to /dashboard
-        window.location.hash = '/dashboard';
+        // Route returning cadet directly to /dashboard if currently on landing/root
+        if (typeof window !== 'undefined') {
+          const currentHash = window.location.hash.replace(/^#/, '').split('?')[0];
+          if (!currentHash || currentHash === '/' || currentHash === '/login' || currentHash === '/auth') {
+            window.location.hash = '/dashboard';
+          }
+        }
       }
     } catch (firestoreErr) {
-      console.error('[AVENIR ARENA AUTH] Firestore read on login error:', firestoreErr);
+      console.warn('[AVENIR ARENA AUTH] Firestore read fallback:', firestoreErr);
       const cached = getInitialStoredProfile();
-      if (cached && (cached.isSetupComplete || cached.campus)) {
-        setUserProfile(cached);
+      if (cached && (cached.isSetupComplete || cached.campus) && (cached.uid === user.uid || !cached.uid)) {
+        setCurrentUser(user);
+        setUserProfile({ ...cached, uid: user.uid });
         setNeedsRegistration(false);
-        window.location.hash = '/dashboard';
+        setIsLoading(false);
+        try {
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+          localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ ...cached, uid: user.uid }));
+          localStorage.removeItem('avenir_needs_registration');
+        } catch {}
+        if (typeof window !== 'undefined') {
+          const currentHash = window.location.hash.replace(/^#/, '').split('?')[0];
+          if (!currentHash || currentHash === '/' || currentHash === '/login' || currentHash === '/auth') {
+            window.location.hash = '/dashboard';
+          }
+        }
       } else {
-        await syncProfileFromFirestore(user.uid);
+        try {
+          const localDoc = await firestoreService.getUserDoc(user.uid);
+          if (localDoc && (localDoc.isSetupComplete || localDoc.campus)) {
+            const xpVal = Number(localDoc.academicXP ?? localDoc.xp ?? 0);
+            const profile: UserProfile = {
+              uid: localDoc.uid,
+              email: localDoc.email,
+              username: localDoc.username,
+              firstName: localDoc.firstName,
+              lastName: localDoc.lastName,
+              avatarUrl: localDoc.avatarUrl,
+              campus: localDoc.campus,
+              year: localDoc.year || '1st Year',
+              batch: localDoc.batch,
+              bio: localDoc.bio,
+              socialLinks: localDoc.socialLinks,
+              xp: xpVal,
+              academicXP: xpVal,
+              gamesPlayed: localDoc.gamesPlayed,
+              infiniteTraceStreak: localDoc.infiniteTraceStreak,
+              role: localDoc.role,
+              isSetupComplete: true,
+              createdAt: localDoc.createdAt,
+            };
+            setCurrentUser(user);
+            setUserProfile(profile);
+            setNeedsRegistration(false);
+            setIsLoading(false);
+            try {
+              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+              localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+              localStorage.removeItem('avenir_needs_registration');
+            } catch {}
+            if (typeof window !== 'undefined') {
+              const currentHash = window.location.hash.replace(/^#/, '').split('?')[0];
+              if (!currentHash || currentHash === '/' || currentHash === '/login' || currentHash === '/auth') {
+                window.location.hash = '/dashboard';
+              }
+            }
+            return;
+          }
+        } catch {}
+
+        setCurrentUser(user);
+        setUserProfile(null);
+        setNeedsRegistration(true);
+        setIsLoading(false);
+        try {
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+          localStorage.setItem('avenir_needs_registration', 'true');
+        } catch {}
       }
+    } finally {
+      processingUidRef.current = null;
     }
   };
+
+  // Restore authenticated session and listen to Firebase Auth in the background
+  useEffect(() => {
+    let isMounted = true;
+
+    // Immediately bind traceEngine to authenticated student if present
+    const activeUid = currentUser?.uid || initialUser?.uid;
+    if (activeUid) {
+      traceEngine.setActiveStudent(activeUid);
+      syncProfileFromFirestore(activeUid).catch(() => {});
+    }
+
+    // Check for pending redirect result (handles redirect OAuth flow)
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!isMounted) return;
+        if (result && result.user) {
+          await processAuthenticatedUser(result.user);
+        }
+      })
+      .catch((err) => {
+        console.warn('[AVENIR ARENA AUTH] getRedirectResult check:', err);
+      });
+
+    // Listen to Firebase Auth state changes for persistent session across page reloads
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (!isMounted) return;
+
+      if (fbUser) {
+        await processAuthenticatedUser(fbUser);
+      } else {
+        // Prevent clearing state if user is currently interacting with the Google popup flow
+        if (isLoggingInRef.current) return;
+
+        setCurrentUser(null);
+        setUserProfile(null);
+        setNeedsRegistration(false);
+        setIsLoading(false);
+        try {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          localStorage.removeItem(PROFILE_STORAGE_KEY);
+          localStorage.removeItem('avenir_needs_registration');
+        } catch {}
+        traceEngine.setActiveStudent('');
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const openAuthModal = () => {
+    loginWithGoogle();
+  };
+  const closeAuthModal = () => setIsAuthModalOpen(false);
+  const clearError = () => setError(null);
 
   /**
    * Handle @react-oauth/google success credential response
@@ -509,9 +544,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Decode received JWT credential using jwt-decode
       const payload = jwtDecode<GoogleTokenPayload>(credentialResponse.credential);
-
       if (!payload || !payload.sub) {
         setError('Invalid token response received from Google.');
         return;
@@ -527,7 +560,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token: credentialResponse.credential,
       };
 
-      await handleAuthSuccess(user);
+      await processAuthenticatedUser(user);
     } catch (err) {
       console.error('[AVENIR ARENA AUTH] Failed to decode Google JWT token:', err);
       setError('Login cancelled. Try again.');
@@ -548,27 +581,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const loginWithGoogle = async (): Promise<void> => {
     setError(null);
+    setIsLoading(true);
+    isLoggingInRef.current = true;
+
     try {
       const res = await signInWithPopup(auth, googleProvider);
       if (res && res.user) {
-        const user: User = {
-          uid: res.user.uid,
-          displayName: res.user.displayName || 'Google Cadet',
-          email: res.user.email || '',
-          photoURL:
-            res.user.photoURL ||
-            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        };
-        await handleAuthSuccess(user);
+        await processAuthenticatedUser(res.user);
         return;
       }
     } catch (popupErr: any) {
       console.error('[AVENIR ARENA AUTH] Firebase popup flow error:', popupErr);
+      if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/cancelled-popup-request') {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (redirectErr) {
+          console.error('[AVENIR ARENA AUTH] Redirect fallback error:', redirectErr);
+        }
+      }
       if (popupErr?.code === 'auth/popup-closed-by-user') {
         setError('Login cancelled. Try again.');
       } else {
         setError(popupErr?.message || 'Failed to sign in with Google. Please try again.');
       }
+      setIsLoading(false);
+    } finally {
+      isLoggingInRef.current = false;
     }
   };
 
@@ -752,7 +791,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   // Flag determining whether mandatory first-time onboarding modal should be displayed
-  const isOnboardingRequired = needsRegistration || Boolean(currentUser && (!userProfile || !userProfile.isSetupComplete));
+  const isOnboardingRequired = needsRegistration || Boolean(currentUser && userProfile && !userProfile.isSetupComplete);
 
   return (
     <AuthContext.Provider

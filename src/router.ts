@@ -6,8 +6,10 @@ export interface RouteState {
 }
 
 function getHashPath(): string {
+  if (typeof window === 'undefined') return '/dashboard';
   const hash = window.location.hash.replace(/^#/, '');
-  return hash || '/dashboard';
+  const clean = hash.split('?')[0].trim();
+  return clean || '/dashboard';
 }
 
 export function useRouter() {
