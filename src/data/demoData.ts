@@ -18,7 +18,6 @@ export const demoStudent: Student = {
   email: '',
   avatarInitials: 'CO',
   avatarColor: 'from-[var(--c-accent)] to-[var(--c-accent-2)]',
-<<<<<<< HEAD
   level: 14,
   totalXP: 8470,
   currentLevelXP: 470,
@@ -28,7 +27,7 @@ export const demoStudent: Student = {
   courseBranch: 'Computer Science — Data Systems',
   year: 'Year 2',
   batch: 'Batch 2026 — Section B',
-  campus: 'North Campus',
+  campus: 'MSOT Ghaziabad',
   joinedDate: 'August 2025',
   streakDays: 14,
   weeklyGrowthPct: 48,
@@ -36,19 +35,6 @@ export const demoStudent: Student = {
     LEADERBOARD_BADGES['Consistent Player'],
     LEADERBOARD_BADGES['Consistent Learning Growth'],
   ],
-=======
-  level: 1,
-  totalXP: 0,
-  currentLevelXP: 0,
-  nextLevelXP: 100,
-  streak: 0,
-  completedQuests: 0,
-  courseBranch: 'Computer Science & Engineering',
-  year: 'Year 1',
-  batch: 'Batch 2026',
-  campus: 'MSOT Ghaziabad',
-  joinedDate: new Date().toISOString(),
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 };
 
 // ─── Games library ────────────────────────────────────────────────
@@ -203,7 +189,6 @@ export const demoQuests: Quest[] = [
   },
 ];
 
-<<<<<<< HEAD
 // ─── Leaderboard ──────────────────────────────────────────────────
 export const demoLeaderboard: LeaderboardEntry[] = [
   {
@@ -364,11 +349,6 @@ export const demoActivities: Activity[] = [
   { id: 'act-011', date: '2026-10-09', type: 'challenge', title: 'Daily Challenge: Reverse a Linked List', detail: 'Solved in 3 minutes 12 seconds', xpEarned: 130 },
   { id: 'act-012', date: '2026-10-09', type: 'game', title: 'Recursion Realm', detail: 'Completed tower puzzle', xpEarned: 110 },
 ];
-=======
-// ─── Real-Time Leaderboard & Activity Feeds (Purged mock data) ─────
-export const demoLeaderboard: LeaderboardEntry[] = [];
-export const demoActivities: Activity[] = [];
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
 // ─── Badges ───────────────────────────────────────────────────────
 export const demoBadges: Badge[] = [

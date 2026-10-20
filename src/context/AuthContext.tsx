@@ -620,6 +620,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Ignored: superseded by concurrent request
       } else if (err?.code === 'auth/network-request-failed') {
         setError('Network error during authentication. Please check your internet connection.');
+      } else if (err?.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for Google Sign-In. Please add this deployment domain to Firebase Console -> Authentication -> Settings -> Authorized Domains.');
       } else {
         setError(err?.message || 'Failed to sign in with Google. Please try again.');
       }

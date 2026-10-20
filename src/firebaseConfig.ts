@@ -52,9 +52,6 @@ export const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:683733824929:web:8e27b1905e4989f13307e0',
 };
 
-// Truth Test: Yeh line humein console mein batayegi ki key read hui ya nahi
-console.log("Current API Key is:", firebaseConfig.apiKey);
-
 // Local storage backup keys for offline resilience & graceful fallback
 const FIRESTORE_USERS_KEY = 'avenir_firestore_users_v1';
 const FIRESTORE_QUIZZES_KEY = 'avenir_firestore_quizzes_v1';

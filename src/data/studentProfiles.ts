@@ -1,5 +1,4 @@
 import type { EditableStudentProfile, StudentProfile } from '@/types';
-<<<<<<< HEAD
 import { demoStudent } from './demoData';
 import { LEADERBOARD_BADGES } from './leaderboardBadges';
 
@@ -109,11 +108,6 @@ export const demoStudentProfiles: StudentProfile[] = [
     profileCompletion: 89,
   }),
 ];
-=======
-
-// Purged dummy student profiles — Arena strictly operates with real authenticated users
-export const demoStudentProfiles: StudentProfile[] = [];
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
 export function getEditableProfile(student: StudentProfile): EditableStudentProfile {
   return {

@@ -353,13 +353,13 @@ export function LeaderboardPage() {
 
   // Apply search query filter if provided
   const displayedEntries = searchQuery.trim()
-    ? entries.filter(
+    ? filteredEntries.filter(
         (e) =>
           e.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
           e.batch.toLowerCase().includes(searchQuery.toLowerCase()) ||
           e.campus.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : entries;
+    : filteredEntries;
 
   const toggleAnonymity = () => {
     setStudentPref((prev) => ({ ...prev, anonymous: !prev.anonymous }));
@@ -743,117 +743,37 @@ export function LeaderboardPage() {
                 const isFirst = entry.rank === 1;
                 const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
 
-          <div className="divide-y divide-line">
-            {displayedEntries.map((entry) => {
-              const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
+                return (
+                  <Card
+                    key={entry.id}
+                    className={`text-center ${
+                      isFirst
+                        ? 'border-gold-400/40 bg-gradient-to-b from-gold-400/10 to-transparent sm:scale-105 z-10'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex justify-center mb-2.5">{rankIcon(entry.rank)}</div>
 
-              return (
-                <div
-                  key={entry.id}
-                  className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${
-                    entry.isCurrentUser
-                      ? 'bg-gold-400/10 border-l-4 border-gold-400'
-                      : 'hover:bg-elevated'
-                  }`}
-                >
-                  {/* Left: Rank & Competitor Details */}
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-12 flex flex-col items-center justify-center shrink-0">
-                      {rankIcon(entry.rank)}
-                      <div className="mt-0.5">{renderRankChange(entry.rankChange ?? 0)}</div>
+                    <div className="flex justify-center">
+                      <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="lg" />
                     </div>
 
-                    <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="md" />
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-ivory truncate">{entry.displayName}</p>
-                        {entry.isCurrentUser && (
-                          <span className="badge bg-gold-400/20 text-gold-400 text-[10px]">You</span>
-                        )}
-                        {entry.isDemo && (
-                          <span className="text-[9px] font-mono text-muted/60 uppercase">Cohort</span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted truncate">
-                        Level {entry.level} • {entry.batch} • {entry.campus}
-                      </p>
-
-                      {/* Active Title Badges */}
-                      {entry.badges && entry.badges.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                          {entry.badges.map((b) => (
-                            <BadgeChip
-                              key={b.title}
-                              badge={b}
-                              isHighlighted={
-                                (activeTab === 'consistent-player' && b.title === 'Consistent Player') ||
-                                (activeTab === 'learning-growth' && b.title === 'Consistent Learning Growth')
-                              }
-                            />
-                          ))}
-                        </div>
+                    <div className="mt-3 flex items-center justify-center gap-1.5">
+                      <p className="font-display font-semibold text-ivory truncate">{entry.displayName}</p>
+                      {entry.isCurrentUser && (
+                        <span className="badge bg-gold-400/20 text-gold-400 text-[9px]">You</span>
                       )}
                     </div>
-                  </div>
 
-                  {/* Right: Zone & Metric Column */}
-                  <div className="flex items-center gap-6 sm:gap-12 shrink-0">
-                    {/* Zone Badge (on md+ screens) */}
-                    <div className="hidden md:flex flex-col items-end">
+                    <div className="flex items-center justify-center gap-2 mt-1">
                       <span
-                        className="text-[10px] font-semibold px-2 py-0.5 rounded"
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
                         style={{ backgroundColor: tierConfig.badgeBg, color: tierConfig.color }}
                       >
-                        {tierConfig.name}
+                        {tierConfig.name.split(' ')[0]}
                       </span>
-                      {scope === 'weekly' && (
-                        <span
-                          className={`text-[10px] font-mono mt-0.5 ${
-                            entry.zone === 'promotion'
-                              ? 'text-gold-400'
-                              : entry.zone === 'relegation'
-                              ? 'text-crimson-400'
-                              : 'text-muted'
-                          }`}
-                        >
-                          {entry.zone === 'promotion' && '▲ Promotes'}
-                          {entry.zone === 'relegation' && '▼ Relegates'}
-                          {entry.zone === 'safe' && '• Holds'}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Metric Column */}
-                    <div className="text-right w-28">
-                      {activeTab === 'consistent-player' ? (
-                        <>
-                          <p className="text-sm font-mono font-bold text-amber-400 flex items-center justify-end gap-1">
-                            <Flame className="w-3.5 h-3.5" />
-                            {entry.streakDays ?? entry.streak ?? 0} Days
-                          </p>
-                          <p className="text-[10px] text-muted">active streak</p>
-                        </>
-                      ) : activeTab === 'learning-growth' ? (
-                        <>
-                          <p className="text-sm font-mono font-bold text-emerald-400 flex items-center justify-end gap-1">
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                            +{entry.weeklyGrowthPct ?? 0}%
-                          </p>
-                          <p className="text-[10px] text-muted">vs last cycle</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-sm font-mono font-bold text-ivory">
-                            {scope === 'weekly'
-                              ? `+${(entry.weeklyXP ?? 0).toLocaleString()}`
-                              : entry.totalXP.toLocaleString()}
-                          </p>
-                          <p className="text-[10px] text-muted">
-                            {scope === 'weekly' ? 'weekly' : 'all-time'}
-                          </p>
-                        </>
-                      )}
+                      <span className="text-xs text-muted">Lvl {entry.level}</span>
+                      {renderRankChange(entry.rankChange ?? 0)}
                     </div>
 
                     <p className="text-xl font-mono font-bold text-gold-400 mt-2.5">
@@ -869,21 +789,29 @@ export function LeaderboardPage() {
           )}
 
           {/* Full Standings Table */}
-          {filteredEntries.length > 0 ? (
+          {displayedEntries.length > 0 ? (
             <Card className="overflow-hidden p-0">
               <div className="border-b border-line bg-elevated px-4 py-3 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted">
                 <div className="flex items-center gap-4">
                   <span className="w-12 text-center">Rank</span>
-                  <span>Competitor</span>
+                  <span>Competitor & Title Badges</span>
                 </div>
                 <div className="flex items-center gap-6 sm:gap-12">
                   <span className="hidden md:inline">Tier & Zone</span>
-                  <span className="w-24 text-right">Academic XP</span>
+                  <span className="w-28 text-right">
+                    {activeTab === 'consistent-player'
+                      ? '🔥 Streak'
+                      : activeTab === 'learning-growth'
+                      ? '📈 Growth %'
+                      : scope === 'weekly'
+                      ? 'Weekly XP'
+                      : 'Total XP'}
+                  </span>
                 </div>
               </div>
 
               <div className="divide-y divide-line">
-                {filteredEntries.map((entry) => {
+                {displayedEntries.map((entry) => {
                   const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
 
                   return (
@@ -898,7 +826,7 @@ export function LeaderboardPage() {
                           : 'hover:bg-elevated'
                       }`}
                     >
-                      {/* Left: Rank & Competitor */}
+                      {/* Left: Rank & Competitor Details */}
                       <div className="flex items-center gap-4 min-w-0">
                         <div className="w-12 flex flex-col items-center justify-center shrink-0">
                           {rankIcon(entry.rank)}
@@ -908,7 +836,7 @@ export function LeaderboardPage() {
                         <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="md" />
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-sm font-medium text-ivory truncate">{entry.displayName}</p>
                             {entry.isCurrentUser && (
                               <span className="badge bg-gold-400/20 text-gold-400 text-[10px]">You</span>
@@ -918,12 +846,28 @@ export function LeaderboardPage() {
                             )}
                           </div>
                           <p className="text-xs text-muted truncate">
-                            Level {entry.level} • {(entry as any).gamesPlayed || 0} quests • {(entry as any).streak || 0}d streak • {entry.campus}
+                            Level {entry.level} • {entry.batch} • {entry.campus}
                           </p>
+
+                          {/* Active Title Badges */}
+                          {entry.badges && entry.badges.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                              {entry.badges.map((b) => (
+                                <BadgeChip
+                                  key={b.title}
+                                  badge={b}
+                                  isHighlighted={
+                                    (activeTab === 'consistent-player' && b.title === 'Consistent Player') ||
+                                    (activeTab === 'learning-growth' && b.title === 'Consistent Learning Growth')
+                                  }
+                                />
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Right: Zone & XP */}
+                      {/* Right: Zone & Metric Column */}
                       <div className="flex items-center gap-6 sm:gap-12 shrink-0">
                         {/* Zone Badge (on md+ screens) */}
                         <div className="hidden md:flex flex-col items-end">
@@ -933,27 +877,53 @@ export function LeaderboardPage() {
                           >
                             {tierConfig.name}
                           </span>
-                          <span
-                            className={`text-[10px] font-mono mt-0.5 ${
-                              entry.zone === 'promotion'
-                                ? 'text-gold-400'
-                                : entry.zone === 'relegation'
-                                ? 'text-crimson-400'
-                                : 'text-muted'
-                            }`}
-                          >
-                            {entry.zone === 'promotion' && '▲ Promotes'}
-                            {entry.zone === 'relegation' && '▼ Relegates'}
-                            {entry.zone === 'safe' && '• Holds'}
-                          </span>
+                          {scope === 'weekly' && (
+                            <span
+                              className={`text-[10px] font-mono mt-0.5 ${
+                                entry.zone === 'promotion'
+                                  ? 'text-gold-400'
+                                  : entry.zone === 'relegation'
+                                  ? 'text-crimson-400'
+                                  : 'text-muted'
+                              }`}
+                            >
+                              {entry.zone === 'promotion' && '▲ Promotes'}
+                              {entry.zone === 'relegation' && '▼ Relegates'}
+                              {entry.zone === 'safe' && '• Holds'}
+                            </span>
+                          )}
                         </div>
 
-                        {/* XP Score */}
-                        <div className="text-right w-24">
-                          <p className="text-sm font-mono font-bold text-gold-400">
-                            {entry.totalXP.toLocaleString()}
-                          </p>
-                          <p className="text-[10px] text-muted">Academic XP</p>
+                        {/* Metric Column */}
+                        <div className="text-right w-28">
+                          {activeTab === 'consistent-player' ? (
+                            <>
+                              <p className="text-sm font-mono font-bold text-amber-400 flex items-center justify-end gap-1">
+                                <Flame className="w-3.5 h-3.5" />
+                                {entry.streakDays ?? entry.streak ?? 0} Days
+                              </p>
+                              <p className="text-[10px] text-muted">active streak</p>
+                            </>
+                          ) : activeTab === 'learning-growth' ? (
+                            <>
+                              <p className="text-sm font-mono font-bold text-emerald-400 flex items-center justify-end gap-1">
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                                +{entry.weeklyGrowthPct ?? 0}%
+                              </p>
+                              <p className="text-[10px] text-muted">vs last cycle</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-sm font-mono font-bold text-gold-400">
+                                {scope === 'weekly'
+                                  ? `+${(entry.weeklyXP ?? 0).toLocaleString()}`
+                                  : entry.totalXP.toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-muted">
+                                {scope === 'weekly' ? 'weekly XP' : 'Academic XP'}
+                              </p>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -964,8 +934,12 @@ export function LeaderboardPage() {
           ) : (
             <Card>
               <EmptyState
-                title="No players yet"
-                message="No competitors have entered the arena rankings yet. Complete a learning quest or quiz to set the first score!"
+                title="No competitors found"
+                message={
+                  searchQuery.trim()
+                    ? `No students matching "${searchQuery}" found in the selected filter criteria.`
+                    : 'No competitors have entered the arena rankings yet. Complete a learning quest or quiz to set the first score!'
+                }
                 icon={<Trophy className="w-8 h-8 text-gold-400" />}
               />
             </Card>

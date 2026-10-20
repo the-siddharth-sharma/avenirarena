@@ -23,7 +23,6 @@ import {
 import { codeChallenges, getRandomChallenges, type CodeChallenge } from './challenges';
 import { soundCtrl, type AudioSettings } from './audio';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
-<<<<<<< HEAD
 import {
   codeRunnerLevels,
   getSavedProgression,
@@ -35,9 +34,7 @@ import {
 import { LevelSelector } from './LevelSelector';
 import { DsaCodeLabModal } from './DsaCodeLabModal';
 import { LevelCompletionModal } from './LevelCompletionModal';
-=======
 import { usePlayerIdentity, drawPlayerAvatarToCanvas } from '@/components/game-core';
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
 interface Particle {
   x: number;
@@ -78,12 +75,8 @@ interface CodeRunnerGameProps {
   avatarUrl?: string;
 }
 
-<<<<<<< HEAD
-export function CodeRunnerGame({ onExit }: CodeRunnerGameProps) {
-  const { selectedStudent, submitGame, gameCompletions, submitCodeRunnerLevel } = useStudentProfiles();
-=======
 export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: propAvatarUrl }: CodeRunnerGameProps) {
-  const { selectedStudent, submitGame, gameCompletions, updateUserXP } = useStudentProfiles();
+  const { selectedStudent, submitGame, gameCompletions, submitCodeRunnerLevel, updateUserXP } = useStudentProfiles();
   const playerIdentity = usePlayerIdentity();
 
   // Ref for 60 FPS Canvas render loop to access current identity without closure thrashing
@@ -95,7 +88,6 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
   };
 
   const username = playerIdentityRef.current.username;
->>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
