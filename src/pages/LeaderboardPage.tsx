@@ -35,7 +35,7 @@ import {
   type ArenaEntry,
   type LeaderboardViewTab,
 } from '@/engine/competitiveArena';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { fetchRealtimeCadets } from '@/firebaseConfig';
@@ -92,14 +92,14 @@ export function LeaderboardPage() {
   const { currentUser, userProfile } = useAuth();
 
   // Active Category View Tab
-  const [activeTab, setActiveTab] = useState<LeaderboardViewTab>('overall');
+  const [activeTab] = useState<LeaderboardViewTab>('overall');
 
   // Filters & Search
   const [scope, setScope] = useState<'weekly' | 'all-time'>('weekly');
   const [batchFilter, setBatchFilter] = useState<'all' | 'my-batch'>('all');
   const [campusFilter, setCampusFilter] = useState<string>('all');
   const [leagueFilter, setLeagueFilter] = useState<'all' | LeagueTier>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery] = useState('');
 
   // Live countdown to Sunday midnight
   const [countdown, setCountdown] = useState(() => getWeekCountdown());
@@ -119,7 +119,6 @@ export function LeaderboardPage() {
   }, []);
 
   // Fetch top 10 users from Firestore ordered by academicXP descending
-  // Real-time synchronization of users from Firestore & Global Search source, ranked by XP & Hardwork
   useEffect(() => {
     let isMounted = true;
 
@@ -151,12 +150,13 @@ export function LeaderboardPage() {
               xp: effectiveXP,
               gamesPlayed: Number(data.gamesPlayed || 0),
               streak: Number(data.infiniteTraceStreak || data.streak || 0),
+              weeklyGrowthPct: Number(data.weeklyGrowthPct ?? 0),
               role: data.role || 'cadet',
             });
           });
         }
 
-        // 2. Supplement from fetchRealtimeCadets() to ensure 100% parity with Global Search
+        // 2. Supplement from fetchRealtimeCadets() to ensure parity with Global Search
         const searchCadets = await fetchRealtimeCadets();
         searchCadets.forEach((c) => {
           if (!cadetMap.has(c.uid)) {
@@ -172,6 +172,7 @@ export function LeaderboardPage() {
               xp: c.xp,
               gamesPlayed: c.gamesPlayed,
               streak: c.infiniteTraceStreak,
+              weeklyGrowthPct: Number((c as any).weeklyGrowthPct ?? 0),
               role: c.role || 'cadet',
             });
           }
@@ -195,13 +196,14 @@ export function LeaderboardPage() {
             xp: currentXP,
             gamesPlayed: Number(userProfile?.gamesPlayed ?? existing.gamesPlayed ?? 0),
             streak: Number(userProfile?.infiniteTraceStreak ?? existing.streak ?? 0),
+            weeklyGrowthPct: Number((userProfile as any)?.weeklyGrowthPct ?? existing.weeklyGrowthPct ?? 0),
             role: userProfile?.role || 'cadet',
           });
         }
 
         const allUsers = Array.from(cadetMap.values());
 
-        // 4. Rank strictly per XP and Hardwork (Primary: XP, Secondary: Games/Quests completed, Tertiary: Streak)
+        // 4. Rank strictly per XP and Hardwork
         allUsers.sort((a, b) => {
           const xpA = Number(a.academicXP ?? a.xp ?? 0);
           const xpB = Number(b.academicXP ?? b.xp ?? 0);
@@ -265,6 +267,8 @@ export function LeaderboardPage() {
             zoneLabel: rank <= 3 ? 'Promotion Zone' : rank >= 8 ? 'Relegation Risk' : 'Safe Tier',
             gamesPlayed: cadet.gamesPlayed,
             streak: cadet.streak,
+            streakDays: cadet.streak,
+            weeklyGrowthPct: cadet.weeklyGrowthPct,
           };
         });
 
@@ -279,13 +283,10 @@ export function LeaderboardPage() {
         console.warn('[AVENIR ARENA LEADERBOARD] Sync error:', err);
         if (isMounted) setIsLoading(false);
       }
-
     }
 
-    // Initial load
     syncLeaderboard();
 
-    // Real-time Firestore snapshot listener
     let unsubscribe = () => {};
     try {
       const usersRef = collection(db, 'users');
@@ -308,7 +309,6 @@ export function LeaderboardPage() {
     };
   }, [currentUser, userProfile]);
 
-  // Determine user's tier based on live Academic XP
   const effectiveXP = userProfile?.academicXP ?? userProfile?.xp ?? 0;
   const userTier: LeagueTier =
     effectiveXP >= 5000
@@ -327,7 +327,6 @@ export function LeaderboardPage() {
     tier: userTier,
   });
 
-  // Purely dynamic Firestore entries (ordered by academicXP descending)
   const baseEntries = useMemo(() => {
     return firestoreEntries.map((entry) => ({
       ...entry,
@@ -339,6 +338,7 @@ export function LeaderboardPage() {
       ),
     }));
   }, [firestoreEntries, currentUser]);
+
   const filteredEntries = baseEntries.filter((entry) => {
     if (campusFilter !== 'all' && entry.campus !== campusFilter) return false;
     if (leagueFilter !== 'all' && entry.leagueTier !== leagueFilter) return false;
@@ -351,7 +351,6 @@ export function LeaderboardPage() {
 
   const currentStudentEntry = filteredEntries.find((e) => e.isCurrentUser) || null;
 
-  // Apply search query filter if provided
   const displayedEntries = searchQuery.trim()
     ? filteredEntries.filter(
         (e) =>
@@ -376,14 +375,10 @@ export function LeaderboardPage() {
 
   const currentTierConfig = LEAGUE_CONFIGS[userTier];
 
-  // Helper for rank change indicator
   const renderRankChange = (change: number) => {
     if (change > 0) {
       return (
-        <span
-          className="flex items-center text-xs font-mono font-medium text-emerald-400"
-          title={`Up ${change} positions`}
-        >
+        <span className="flex items-center text-xs font-mono font-medium text-emerald-400">
           <ArrowUpRight className="w-3.5 h-3.5" />
           +{change}
         </span>
@@ -391,17 +386,14 @@ export function LeaderboardPage() {
     }
     if (change < 0) {
       return (
-        <span
-          className="flex items-center text-xs font-mono font-medium text-crimson-400"
-          title={`Down ${Math.abs(change)} positions`}
-        >
+        <span className="flex items-center text-xs font-mono font-medium text-crimson-400">
           <ArrowDownRight className="w-3.5 h-3.5" />
           {change}
         </span>
       );
     }
     return (
-      <span className="flex items-center text-xs font-mono text-muted" title="No rank change">
+      <span className="flex items-center text-xs font-mono text-muted">
         <Minus className="w-3.5 h-3.5" />
       </span>
     );
@@ -421,18 +413,14 @@ export function LeaderboardPage() {
         subtitle="Weekly leagues, Title Badge honorifics, and multi-metric academic standings."
       />
 
-      {/* Demo transparency banner */}
       <div className="flex items-center justify-between gap-3 mb-6 text-xs text-muted bg-graphite border border-line rounded-md px-3.5 py-2.5">
         <div className="flex items-center gap-2">
           <Info className="w-4 h-4 text-gold-400 shrink-0" />
-          <span>
-            Rankings combine live XP from your centralized ledger with verified cohort benchmarks. Privacy and opt-out are fully supported.
-          </span>
+          <span>Rankings combine live XP from your centralized ledger with verified cohort benchmarks.</span>
         </div>
         <span className="badge bg-gold-400/10 text-gold-400 hidden sm:inline-block">Part 5: Arena Active</span>
       </div>
 
-      {/* Rollover notice alert if triggered */}
       {rolloverNotice && (
         <div className="mb-6 p-4 rounded-md border border-gold-400/40 bg-gold-400/10 flex items-start justify-between gap-3 animate-fade-in">
           <div className="flex items-center gap-3">
@@ -448,19 +436,22 @@ export function LeaderboardPage() {
         </div>
       )}
 
-      {/* Active Student League Status & Weekly Countdown Hero */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Left 2 Cols: My League & Zone Status */}
         <Card className="lg:col-span-2 overflow-hidden relative">
           <div
             className="absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none"
             style={{ backgroundColor: `${currentTierConfig.color}15` }}
           />
-
           <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start sm:items-center gap-4">
               <StudentAvatar
-                initials={currentUser ? (userProfile?.username || currentUser.displayName || 'AA').slice(0, 2).toUpperCase() : (studentPref.anonymous ? '?' : selectedStudent.avatarInitials)}
+                initials={
+                  currentUser
+                    ? (userProfile?.username || currentUser.displayName || 'AA').slice(0, 2).toUpperCase()
+                    : studentPref.anonymous
+                    ? '?'
+                    : selectedStudent.avatarInitials
+                }
                 color={selectedStudent.avatarColor}
                 size="xl"
                 ring
@@ -485,33 +476,17 @@ export function LeaderboardPage() {
 
                 <h2 className="text-xl sm:text-2xl font-display font-bold text-ivory mt-1">
                   {currentUser
-                    ? (userProfile?.username || currentUser.displayName)
-                    : (studentPref.anonymous ? 'Anonymous Scholar' : selectedStudent.displayName)}
+                    ? userProfile?.username || currentUser.displayName
+                    : studentPref.anonymous
+                    ? 'Anonymous Scholar'
+                    : selectedStudent.displayName}
                 </h2>
                 <p className="text-xs text-muted mt-0.5">
                   {userProfile?.batch || selectedStudent.batch} • {userProfile?.campus || selectedStudent.campus}
                 </p>
-
-                {/* Active Student Badges */}
-                {selectedStudent.badges && selectedStudent.badges.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                    {selectedStudent.badges.map((badge) => (
-                      <BadgeChip
-                        key={badge.title}
-                        badge={badge}
-                        size="xs"
-                        isHighlighted={
-                          (activeTab === 'consistent-player' && badge.title === 'Consistent Player') ||
-                          (activeTab === 'learning-growth' && badge.title === 'Consistent Learning Growth')
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Position & Zone Status */}
             <div className="w-full sm:w-auto text-left sm:text-right border-t sm:border-t-0 pt-3 sm:pt-0 border-line">
               {filteredEntries.find((e) => e.isCurrentUser) || currentStudentEntry ? (
                 (() => {
@@ -525,9 +500,7 @@ export function LeaderboardPage() {
                         </span>
                         {renderRankChange(myEntry?.rankChange ?? 0)}
                       </div>
-                      <p className="text-xs font-mono text-gold-400 mt-0.5">
-                        {myXP.toLocaleString()} Academic XP
-                      </p>
+                      <p className="text-xs font-mono text-gold-400 mt-0.5">{myXP.toLocaleString()} Academic XP</p>
                       <div className="mt-2">
                         <span
                           className={`badge text-[11px] ${
@@ -558,7 +531,6 @@ export function LeaderboardPage() {
           </div>
         </Card>
 
-        {/* Right Col: Weekly Countdown & Rollover Simulation */}
         <Card className="flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-2 mb-3 border-b border-line">
@@ -591,11 +563,7 @@ export function LeaderboardPage() {
 
           <div className="mt-4 pt-3 border-t border-line flex items-center justify-between">
             <span className="text-[11px] text-muted">Safe Rollover Mechanism</span>
-            <button
-              onClick={handleSimulateRollover}
-              className="btn btn-secondary text-xs px-2.5 py-1.5"
-              title="Test end-of-week promotion/relegation transition (idempotent, once per week)"
-            >
+            <button onClick={handleSimulateRollover} className="btn btn-secondary text-xs px-2.5 py-1.5">
               <RotateCcw className="w-3.5 h-3.5" />
               Finalize Week
             </button>
@@ -603,10 +571,8 @@ export function LeaderboardPage() {
         </Card>
       </div>
 
-      {/* Control Bar: Filters, Scope, and Privacy Settings */}
       <Card className="mb-6 p-4">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
-          {/* Scope Toggle: Weekly vs All-Time */}
           <div className="flex items-center gap-1.5 p-1 rounded-md bg-graphite border border-line w-fit">
             <button
               onClick={() => setScope('weekly')}
@@ -622,30 +588,25 @@ export function LeaderboardPage() {
             </button>
           </div>
 
-          {/* Dimension Filters */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 text-xs text-muted">
               <Filter className="w-3.5 h-3.5" />
               <span>Filters:</span>
             </div>
 
-            {/* Batch Filter */}
             <select
               value={batchFilter}
               onChange={(e) => setBatchFilter(e.target.value as 'all' | 'my-batch')}
               className="bg-elevated border border-line rounded px-2.5 py-1.5 text-xs text-ivory outline-none focus:border-gold-400 cursor-pointer"
-              aria-label="Filter by Batch"
             >
               <option value="all">All Batches</option>
-              <option value="my-batch">My Batch ({selectedStudent.batch.split('—')[0].trim()})</option>
+              <option value="my-batch">My Batch</option>
             </select>
 
-            {/* Campus Filter */}
             <select
               value={campusFilter}
               onChange={(e) => setCampusFilter(e.target.value)}
               className="bg-elevated border border-line rounded px-2.5 py-1.5 text-xs text-ivory outline-none focus:border-gold-400 cursor-pointer"
-              aria-label="Filter by Campus"
             >
               <option value="all">All Campuses</option>
               <option value="MSOT Ghaziabad">MSOT Ghaziabad</option>
@@ -653,12 +614,10 @@ export function LeaderboardPage() {
               <option value="MSOT Jaipur">MSOT Jaipur</option>
             </select>
 
-            {/* League Tier Filter */}
             <select
               value={leagueFilter}
               onChange={(e) => setLeagueFilter(e.target.value as 'all' | LeagueTier)}
               className="bg-elevated border border-line rounded px-2.5 py-1.5 text-xs text-ivory outline-none focus:border-gold-400 cursor-pointer"
-              aria-label="Filter by League Tier"
             >
               <option value="all">All Leagues</option>
               {LEAGUE_TIERS_ORDER.map((tier) => (
@@ -669,12 +628,10 @@ export function LeaderboardPage() {
             </select>
           </div>
 
-          {/* Privacy & Opt-Out Controls */}
           <div className="flex items-center gap-2 pt-2 lg:pt-0 border-t lg:border-t-0 border-line">
             <button
               onClick={toggleAnonymity}
               className={`btn text-xs px-3 py-1.5 ${studentPref.anonymous ? 'btn-primary' : 'btn-secondary'}`}
-              title="Mask your name on the public arena board"
             >
               {studentPref.anonymous ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               {studentPref.anonymous ? 'Anonymous' : 'Public Name'}
@@ -683,7 +640,6 @@ export function LeaderboardPage() {
             <button
               onClick={toggleOptOut}
               className={`btn text-xs px-3 py-1.5 ${studentPref.optedOut ? 'btn-secondary text-crimson-400' : 'btn-secondary'}`}
-              title="Toggle public arena participation without losing any XP"
             >
               {studentPref.optedOut ? 'Opted Out' : 'Active'}
             </button>
@@ -691,7 +647,6 @@ export function LeaderboardPage() {
         </div>
       </Card>
 
-      {/* Opted-out warning banner if student hidden */}
       {studentPref.optedOut && (
         <Card className="mb-6 p-4 border-dashed border-line">
           <div className="flex items-center justify-between gap-3">
@@ -700,7 +655,7 @@ export function LeaderboardPage() {
               <div>
                 <p className="text-sm font-medium text-ivory">Arena Visibility: Inactive</p>
                 <p className="text-xs text-muted mt-0.5">
-                  Your profile is currently hidden from competitive leaderboards. Your academic XP and learning progress are safe and never deducted.
+                  Your profile is currently hidden from competitive leaderboards. Your academic XP and learning progress are safe.
                 </p>
               </div>
             </div>
@@ -711,7 +666,6 @@ export function LeaderboardPage() {
         </Card>
       )}
 
-      {/* Sleek Futuristic Loading State & Dynamic Firestore Standings */}
       {isLoading ? (
         <Card className="py-20 my-6 flex flex-col items-center justify-center text-center relative overflow-hidden border border-gold-400/30 bg-graphite/90 shadow-2xl">
           <div className="absolute inset-0 bg-radial-gradient from-gold-400/10 to-transparent pointer-events-none" />
@@ -725,12 +679,7 @@ export function LeaderboardPage() {
             <Sparkles className="w-4 h-4 animate-spin text-gold-400" />
             <span>Synchronizing Multiplayer Arena Standings</span>
           </div>
-          <p className="text-sm font-display font-medium text-ivory">
-            Querying Top 10 Contenders from Firestore
-          </p>
-          <p className="text-xs text-muted font-mono mt-1">
-            Ordered strictly by Academic XP (descending)
-          </p>
+          <p className="text-sm font-display font-medium text-ivory">Querying Top Contenders from Firestore</p>
         </Card>
       ) : (
         <>
@@ -821,9 +770,7 @@ export function LeaderboardPage() {
                         window.location.hash = `/player/${entry.id}`;
                       }}
                       className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors cursor-pointer group ${
-                        entry.isCurrentUser
-                          ? 'bg-gold-400/10 border-l-4 border-gold-400'
-                          : 'hover:bg-elevated'
+                        entry.isCurrentUser ? 'bg-gold-400/10 border-l-4 border-gold-400' : 'hover:bg-elevated'
                       }`}
                     >
                       {/* Left: Rank & Competitor Details */}
@@ -840,9 +787,6 @@ export function LeaderboardPage() {
                             <p className="text-sm font-medium text-ivory truncate">{entry.displayName}</p>
                             {entry.isCurrentUser && (
                               <span className="badge bg-gold-400/20 text-gold-400 text-[10px]">You</span>
-                            )}
-                            {entry.isDemo && (
-                              <span className="text-[9px] font-mono text-muted/60 uppercase">Cohort</span>
                             )}
                           </div>
                           <p className="text-xs text-muted truncate">
@@ -869,7 +813,6 @@ export function LeaderboardPage() {
 
                       {/* Right: Zone & Metric Column */}
                       <div className="flex items-center gap-6 sm:gap-12 shrink-0">
-                        {/* Zone Badge (on md+ screens) */}
                         <div className="hidden md:flex flex-col items-end">
                           <span
                             className="text-[10px] font-semibold px-2 py-0.5 rounded"
@@ -947,7 +890,6 @@ export function LeaderboardPage() {
         </>
       )}
 
-      {/* Title Badge System Legend Card */}
       <Card className="mt-6 p-4">
         <div className="flex items-center justify-between pb-2 mb-3 border-b border-line">
           <p className="section-label text-gold-400 flex items-center gap-1.5">
@@ -957,10 +899,7 @@ export function LeaderboardPage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {Object.values(LEADERBOARD_BADGES).map((badge) => (
-            <div
-              key={badge.title}
-              className="p-3 rounded border border-line bg-graphite flex flex-col justify-between"
-            >
+            <div key={badge.title} className="p-3 rounded border border-line bg-graphite flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-1.5">
                   <BadgeChip badge={badge} size="sm" isHighlighted />
@@ -968,22 +907,11 @@ export function LeaderboardPage() {
                 <p className="text-xs text-ivory font-medium mt-2">{badge.title}</p>
                 <p className="text-[11px] text-muted mt-1 leading-relaxed">{badge.description}</p>
               </div>
-              <div className="mt-3 pt-2 border-t border-line/60 flex items-center justify-between text-[10px] text-muted">
-                <span>Qualification</span>
-                <span className="font-mono text-gold-400">
-                  {badge.title === 'Consistent Player'
-                    ? 'Streak ≥ 7 Days'
-                    : badge.title === 'Consistent Learning Growth'
-                    ? 'Cycle Growth ≥ 30%'
-                    : 'Level ≥ 15 & Top 10%'}
-                </span>
-              </div>
             </div>
           ))}
         </div>
       </Card>
 
-      {/* League Tiers Legend Card */}
       <Card className="mt-6 p-4">
         <p className="section-label text-gold-400 mb-3">Arena League Hierarchy</p>
         <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
@@ -995,20 +923,13 @@ export function LeaderboardPage() {
               <div
                 key={tier}
                 className={`p-3 rounded border text-center transition-all ${
-                  isCurrent
-                    ? 'border-gold-400 bg-gold-400/10 shadow-sm'
-                    : 'border-line bg-graphite'
+                  isCurrent ? 'border-gold-400 bg-gold-400/10 shadow-sm' : 'border-line bg-graphite'
                 }`}
               >
                 <Shield className="w-5 h-5 mx-auto mb-1" style={{ color: conf.color }} />
                 <p className="text-xs font-semibold text-ivory">{conf.name}</p>
-                <p className="text-[10px] text-muted mt-1">
-                  {conf.promotionCount > 0 ? `Top ${conf.promotionCount} promote` : 'Apex Tier'}
-                </p>
                 {isCurrent && (
-                  <span className="badge bg-gold-400/20 text-gold-400 text-[9px] mt-2">
-                    Current League
-                  </span>
+                  <span className="badge bg-gold-400/20 text-gold-400 text-[9px] mt-2">Current League</span>
                 )}
               </div>
             );
