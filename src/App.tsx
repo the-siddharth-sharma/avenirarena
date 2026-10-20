@@ -96,6 +96,12 @@ function App() {
       return <PublicProfilePage playerId={playerId} navigate={navigate} />;
     }
 
+    // Dynamic matching for /post/:id deep-link routing
+    if (path.startsWith('/post/')) {
+      const targetPostId = path.replace(/^\/post\/?/, '').split('?')[0].trim();
+      return <CommunityPage navigate={navigate} initialPostId={targetPostId} />;
+    }
+
     switch (path) {
       case '/':
       case '/dashboard':

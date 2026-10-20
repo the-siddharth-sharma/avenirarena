@@ -260,19 +260,19 @@ export function ProfilePage() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <PageHeader
-          title="Cadet Profile & Settings"
-          subtitle="Manage your learning identity, public credentials, and social links."
-        />
-        <button
-          onClick={navigateToPublicProfile}
-          className="btn btn-primary text-xs px-4 py-2 flex items-center gap-2 shadow-[0_0_15px_rgba(208,180,119,0.25)] shrink-0"
-        >
-          <Share2 className="w-3.5 h-3.5" />
-          <span>View Public Profile</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Cadet Profile & Settings"
+        subtitle="Manage your learning identity, public credentials, and social links."
+        actions={
+          <button
+            onClick={navigateToPublicProfile}
+            className="btn btn-primary text-xs h-9 px-3.5 flex items-center gap-1.5 shadow-[0_0_15px_rgba(208,180,119,0.25)] shrink-0"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span>View Public Profile</span>
+          </button>
+        }
+      />
 
       <Card className="relative overflow-hidden border-line bg-graphite">
         <div className="absolute top-0 right-0 w-72 h-72 bg-gold-400/10 rounded-full blur-3xl -translate-y-1/3 translate-x-1/4 pointer-events-none" />

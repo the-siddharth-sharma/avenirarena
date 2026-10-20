@@ -1,36 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  ArrowRight,
-  CheckCircle2,
-  Copy,
   Flame,
-  Heart,
   Loader2,
-  MessageSquare,
   Radio,
   Send,
-  Sparkles,
   Swords,
   Users,
   Zap,
   AlertCircle,
-  Shield,
-  Circle,
 } from 'lucide-react';
 import { Card } from '@/components/Card';
 import { PageHeader } from '@/components/PageHeader';
+import { CommunityPostCard } from '@/components/community/CommunityPostCard';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/firebase';
 import {
   collection,
   doc,
   addDoc,
-  updateDoc,
+  getDoc,
   onSnapshot,
   query,
   orderBy,
   limit,
-  increment,
 } from 'firebase/firestore';
 import { fetchRealtimeCadets, type RealtimeCadet } from '@/firebaseConfig';
 import { isCadetOnline } from '@/data/presence';
@@ -56,7 +48,9 @@ export interface CommunityPost {
   rawTimestamp?: number;
   content: string;
   challenge?: ChallengeInvite;
-  reactions: {
+  likeCount?: number;
+  commentCount?: number;
+  reactions?: {
     flame: number;
     code: number;
     zap: number;
@@ -129,11 +123,27 @@ function formatRelativeTime(dateOrTimestamp: string | number | undefined): strin
   return `${Math.floor(diffSec / 86400)}d ago`;
 }
 
-interface CommunityPageProps {
-  navigate: (path: string) => void;
+function parseTargetPostId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash;
+  const queryIdx = hash.indexOf('?');
+  if (queryIdx !== -1) {
+    const params = new URLSearchParams(hash.slice(queryIdx));
+    const p = params.get('post') || params.get('postId');
+    if (p) return p;
+  }
+  if (hash.startsWith('#/post/')) {
+    return hash.replace(/^#\/post\//, '').split('?')[0].trim();
+  }
+  return null;
 }
 
-export function CommunityPage({ navigate }: CommunityPageProps) {
+interface CommunityPageProps {
+  navigate: (path: string) => void;
+  initialPostId?: string;
+}
+
+export function CommunityPage({ navigate, initialPostId }: CommunityPageProps) {
   const { currentUser, userProfile } = useAuth();
 
   const [posts, setPosts] = useState<CommunityPost[]>(() => {
@@ -152,7 +162,6 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
   const [newContent, setNewContent] = useState('');
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeInvite | null>(null);
   const [showChallengePicker, setShowChallengePicker] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [isLoadingFeed, setIsLoadingFeed] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -175,6 +184,62 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
       campus: userProfile?.campus || 'MSOT Ghaziabad',
     };
   }, [userProfile, currentUser]);
+
+  const [targetPostId, setTargetPostId] = useState<string | null>(() => {
+    return initialPostId || parseTargetPostId();
+  });
+
+  // Track hash changes for deep links
+  useEffect(() => {
+    const onHashChange = () => {
+      const detected = initialPostId || parseTargetPostId();
+      if (detected) setTargetPostId(detected);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [initialPostId]);
+
+  // If targetPostId is specified, fetch the individual post if not in feed
+  useEffect(() => {
+    if (!targetPostId || !currentUser) return;
+    if (posts.some((p) => p.id === targetPostId)) return;
+
+    let isMounted = true;
+    getDoc(doc(db, 'community_messages', targetPostId))
+      .then((snap) => {
+        if (!isMounted || !snap.exists()) return;
+        const data = snap.data();
+        const singlePost: CommunityPost = {
+          id: snap.id,
+          senderUid: data.senderUid,
+          authorName: data.authorName || 'Cadet Operative',
+          username: data.username || 'cadet',
+          avatarUrl: data.avatarUrl || '',
+          campus: data.campus || 'MSOT Ghaziabad',
+          timestamp: formatRelativeTime(data.timestamp || data.createdAt),
+          rawTimestamp:
+            data.timestamp ||
+            (data.createdAt ? new Date(data.createdAt).getTime() : Date.now()),
+          content: data.content || '',
+          challenge: data.challenge || undefined,
+          likeCount: typeof data.likeCount === 'number' ? data.likeCount : 0,
+          commentCount: typeof data.commentCount === 'number' ? data.commentCount : 0,
+          reactions: data.reactions || { flame: 0, code: 0, zap: 0, heart: 0 },
+          userReactions: {},
+        };
+        setPosts((prev) => {
+          if (prev.some((p) => p.id === singlePost.id)) return prev;
+          return [singlePost, ...prev];
+        });
+      })
+      .catch((err) => {
+        console.warn('[AVENIR ARENA COMMUNITY] Failed fetching target post:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [targetPostId, currentUser, posts]);
 
   // 1. Synchronize real-time community messages from Firestore Cloud
   useEffect(() => {
@@ -205,6 +270,8 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
               rawTimestamp: data.timestamp || (data.createdAt ? new Date(data.createdAt).getTime() : Date.now()),
               content: data.content || '',
               challenge: data.challenge || undefined,
+              likeCount: typeof data.likeCount === 'number' ? data.likeCount : 0,
+              commentCount: typeof data.commentCount === 'number' ? data.commentCount : 0,
               reactions: data.reactions || { flame: 0, code: 0, zap: 0, heart: 0 },
               userReactions: {},
             };
@@ -302,7 +369,7 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
     } catch {
       // Ignore
     }
-  }, [currentUser?.uid, userProfile?.username, userProfile?.avatarUrl, userProfile?.campus]);
+  }, [currentUser, userProfile?.username, userProfile?.avatarUrl, userProfile?.campus]);
 
   // 3. Load eligible real cadets for metric derivations
   useEffect(() => {
@@ -333,11 +400,6 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
   const activeInvitesCount = useMemo(() => {
     return posts.filter((p) => Boolean(p.challenge)).length;
   }, [posts]);
-
-  const campusesSyncedCount = useMemo(() => {
-    const campuses = new Set(registeredCadets.map((c) => c.campus).filter(Boolean));
-    return Math.max(campuses.size, 1);
-  }, [registeredCadets]);
 
   // ── Broadcast Transmission Handler ──
   const handleCreatePost = async (e: React.FormEvent) => {
@@ -378,6 +440,8 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
         xpReward: selectedChallenge.xpReward,
         route: selectedChallenge.route,
       } : null,
+      likeCount: 0,
+      commentCount: 0,
       reactions: { flame: 0, code: 0, zap: 0, heart: 0 },
       createdAt: new Date().toISOString(),
       timestamp: Date.now(),
@@ -402,74 +466,9 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
       setShowChallengePicker(false);
     } catch (err: unknown) {
       console.error('[AVENIR ARENA COMMUNITY] Broadcast transmission failed:', err);
-      // Fallback local persistence if Firestore write is blocked
-      const localFallbackPost: CommunityPost = {
-        ...payload,
-        id: `local-post-${Date.now()}`,
-        timestamp: 'Just now',
-        rawTimestamp: Date.now(),
-        challenge: selectedChallenge || undefined,
-        userReactions: {},
-      };
-      setPosts((prev) => [localFallbackPost, ...prev]);
-      try {
-        const existing = JSON.parse(localStorage.getItem(COMMUNITY_STORAGE_KEY) || '[]');
-        localStorage.setItem(COMMUNITY_STORAGE_KEY, JSON.stringify([localFallbackPost, ...existing]));
-      } catch {}
-      setNewContent('');
-      setSelectedChallenge(null);
-      setShowChallengePicker(false);
+      setSubmitError('Broadcast transmission rejected by Arena network. Please check connection and retry.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  // ── Reaction Handler ──
-  const handleToggleReaction = async (postId: string, key: 'flame' | 'code' | 'zap' | 'heart') => {
-    let shouldIncrementRemote = false;
-
-    setPosts((prev) =>
-      prev.map((p) => {
-        if (p.id !== postId) return p;
-        const userReactions = p.userReactions || {};
-        const isReacted = Boolean(userReactions[key]);
-        shouldIncrementRemote = !isReacted;
-
-        const nextReactions = {
-          ...p.reactions,
-          [key]: isReacted ? Math.max(0, (p.reactions[key] || 1) - 1) : (p.reactions[key] || 0) + 1,
-        };
-
-        return {
-          ...p,
-          reactions: nextReactions,
-          userReactions: {
-            ...userReactions,
-            [key]: !isReacted,
-          },
-        };
-      })
-    );
-
-    // Sync to Firestore Cloud in background
-    if (!postId.startsWith('local-')) {
-      try {
-        const msgRef = doc(db, 'community_messages', postId);
-        await updateDoc(msgRef, {
-          [`reactions.${key}`]: increment(shouldIncrementRemote ? 1 : -1),
-        });
-      } catch {
-        // Ignore reaction write errors
-      }
-    }
-  };
-
-  const handleCopyChallenge = (post: CommunityPost) => {
-    if (typeof window !== 'undefined' && post.challenge) {
-      const inviteUrl = `${window.location.origin}/#community?invite=${post.challenge.id}`;
-      navigator.clipboard.writeText(inviteUrl);
-      setCopiedId(post.id);
-      setTimeout(() => setCopiedId(null), 2500);
     }
   };
 
@@ -790,157 +789,17 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
       ) : (
         <div className="space-y-4">
           {filteredPosts.map((post) => (
-            <Card
+            <CommunityPostCard
               key={post.id}
-              className="p-5 border-line bg-graphite hover:border-line-light transition-all space-y-3.5"
-            >
-              {/* Post Author Info */}
-              <div className="flex items-center justify-between">
-                <div
-                  className="flex items-center gap-3 cursor-pointer group"
-                  onClick={() => navigate(`/player/${post.username}`)}
-                >
-                  <div className="w-10 h-10 rounded-full border border-line group-hover:border-gold-400 overflow-hidden bg-obsidian shrink-0 transition-colors">
-                    {post.avatarUrl ? (
-                      <img
-                        src={post.avatarUrl}
-                        alt={post.authorName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gold-400 font-mono">
-                        {post.authorName.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs font-bold text-ivory group-hover:text-gold-300 transition-colors">
-                        {post.authorName}
-                      </p>
-                      <span className="text-[10px] font-mono text-muted">@{post.username}</span>
-                    </div>
-                    <p className="text-[10px] font-mono text-muted">{post.campus}</p>
-                  </div>
-                </div>
-
-                <span className="text-[11px] font-mono text-muted">{post.timestamp}</span>
-              </div>
-
-              {/* Post Content */}
-              <p className="text-xs sm:text-sm text-ivory/90 leading-relaxed font-sans whitespace-pre-wrap">
-                {post.content}
-              </p>
-
-              {/* Rich Embed Card for Game/Quiz Challenge */}
-              {post.challenge && (
-                <div className="p-4 rounded-xl border border-gold-400/40 bg-gradient-to-r from-obsidian via-elevated to-obsidian shadow-lg space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-gold-400/15 text-gold-400 border border-gold-400/30 flex items-center gap-1">
-                        <Swords className="w-3 h-3 text-gold-400" />
-                        CHALLENGE INVITE
-                      </span>
-                      <span className="text-[10px] font-mono text-muted uppercase">
-                        {post.challenge.difficulty}
-                      </span>
-                    </div>
-
-                    <span className="text-xs font-mono font-bold text-gold-400 flex items-center gap-1">
-                      <Zap className="w-3.5 h-3.5 text-gold-400" />
-                      +{post.challenge.xpReward} XP
-                    </span>
-                  </div>
-
-                  <div>
-                    <h4 className="font-display font-bold text-sm sm:text-base text-ivory">
-                      {post.challenge.title}
-                    </h4>
-                    <p className="text-xs text-muted font-mono mt-0.5">
-                      {post.challenge.targetScoreOrTopic}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-line/60 flex-wrap gap-2">
-                    <button
-                      onClick={() => handleCopyChallenge(post)}
-                      className="text-xs font-mono text-muted hover:text-gold-400 transition-colors flex items-center gap-1.5"
-                    >
-                      {copiedId === post.id ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">Invite Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy Link</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => navigate(post.challenge!.route)}
-                      className="btn btn-primary text-xs px-4 py-1.5 flex items-center gap-1.5 shadow-[0_0_15px_rgba(208,180,119,0.3)] hover:scale-105 transition-transform"
-                    >
-                      <span>Accept Challenge & Play</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Reactions Bar */}
-              <div className="flex items-center gap-2 pt-2 border-t border-line/50">
-                <button
-                  onClick={() => handleToggleReaction(post.id, 'flame')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 border transition-all ${
-                    post.userReactions?.flame
-                      ? 'border-orange-500/50 bg-orange-500/15 text-orange-400 shadow-sm'
-                      : 'border-line bg-obsidian text-muted hover:text-ivory hover:border-line-light'
-                  }`}
-                >
-                  <span>🔥</span>
-                  <span>{post.reactions?.flame || 0}</span>
-                </button>
-
-                <button
-                  onClick={() => handleToggleReaction(post.id, 'code')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 border transition-all ${
-                    post.userReactions?.code
-                      ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-400 shadow-sm'
-                      : 'border-line bg-obsidian text-muted hover:text-ivory hover:border-line-light'
-                  }`}
-                >
-                  <span>💻</span>
-                  <span>{post.reactions?.code || 0}</span>
-                </button>
-
-                <button
-                  onClick={() => handleToggleReaction(post.id, 'zap')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 border transition-all ${
-                    post.userReactions?.zap
-                      ? 'border-gold-400/50 bg-gold-400/15 text-gold-400 shadow-sm'
-                      : 'border-line bg-obsidian text-muted hover:text-ivory hover:border-line-light'
-                  }`}
-                >
-                  <span>⚡</span>
-                  <span>{post.reactions?.zap || 0}</span>
-                </button>
-
-                <button
-                  onClick={() => handleToggleReaction(post.id, 'heart')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 border transition-all ${
-                    post.userReactions?.heart
-                      ? 'border-red-500/50 bg-red-500/15 text-red-400 shadow-sm'
-                      : 'border-line bg-obsidian text-muted hover:text-ivory hover:border-line-light'
-                  }`}
-                >
-                  <span>❤️</span>
-                  <span>{post.reactions?.heart || 0}</span>
-                </button>
-              </div>
-            </Card>
+              post={post}
+              isTargetPost={post.id === targetPostId}
+              onNavigate={navigate}
+              onPostUpdate={(id, updates) => {
+                setPosts((prev) =>
+                  prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
+                );
+              }}
+            />
           ))}
         </div>
       )}

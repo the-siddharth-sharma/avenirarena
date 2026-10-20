@@ -4,6 +4,7 @@ import { MobileHeader } from './MobileHeader';
 import { BackgroundEffects } from './BackgroundEffects';
 import { GlobalCursor } from './GlobalCursor';
 import { FooterGlossary } from './FooterGlossary';
+import { QuoteFooter } from './QuoteFooter';
 
 interface AppLayoutProps {
   currentPath: string;
@@ -34,7 +35,7 @@ export function AppLayout({ currentPath, onNavigate, children }: AppLayoutProps)
             <BackgroundEffects showDashboardEffects={isDashboard}>
               {children}
             </BackgroundEffects>
-            <FooterGlossary />
+            {isDashboard ? <FooterGlossary /> : <QuoteFooter currentPath={currentPath} />}
           </div>
         </main>
       </div>
