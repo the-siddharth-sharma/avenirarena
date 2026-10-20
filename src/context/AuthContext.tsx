@@ -6,7 +6,6 @@ import { firestoreService } from '@/firebaseConfig';
 import { doc, getDoc, setDoc, increment } from 'firebase/firestore';
 import {
   signInWithPopup,
-  signInWithRedirect,
   getRedirectResult,
   onAuthStateChanged,
   signOut,
@@ -50,6 +49,32 @@ export interface UserProfile {
   role?: 'admin' | 'cadet';
   isSetupComplete: boolean;
   createdAt?: string;
+}
+
+interface FirestoreUserDocData {
+  uid?: string;
+  email?: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string;
+  photoURL?: string;
+  campus?: string;
+  year?: string;
+  yearOfStudy?: string;
+  batch?: string;
+  batchCohort?: string;
+  bio?: string;
+  socialLinks?: UserSocialLinks;
+  xp?: number;
+  academicXP?: number;
+  gamesPlayed?: number;
+  infiniteTraceStreak?: number;
+  role?: 'admin' | 'cadet';
+  isRegistered?: boolean;
+  isSetupComplete?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface GoogleTokenPayload {
@@ -99,6 +124,7 @@ interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
   isAdmin: boolean;
+  loading: boolean;
   isLoading: boolean;
   isOnboardingRequired: boolean;
   needsRegistration: boolean;
@@ -196,13 +222,14 @@ function getInitialStoredProfile(): UserProfile | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Synchronous cache hydration ensures 0ms render latency on page reload
+  // Synchronous cache hydration ensures instantaneous render latency on page reload
   const initialUser = getInitialStoredUser();
   const initialProfile = getInitialStoredProfile();
   const [currentUser, setCurrentUser] = useState<User | null>(initialUser);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(initialProfile);
-  // Start with isLoading true only if no cached registered session exists, allowing Firebase Auth to resolve
-  const [isLoading, setIsLoading] = useState<boolean>(() => !initialUser || !initialProfile);
+  // Dedicated loading state: App boots with loading === true while Firebase asynchronously resolves session
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [needsRegistration, setNeedsRegistration] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('avenir_needs_registration') === 'true';
@@ -212,6 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isLoggingInRef = useRef<boolean>(false);
   const processingUidRef = useRef<string | null>(null);
+  const authResolvedRef = useRef<boolean>(false);
 
   // Sync profile from Firestore with timeout resilience and local caching
   const syncProfileFromFirestore = async (uid: string): Promise<UserProfile | null> => {
@@ -252,7 +280,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
             localStorage.removeItem('avenir_needs_registration');
-          } catch {}
+          } catch {
+            // Ignore storage quota errors
+          }
           return profile;
         }
       } catch (firestoreErr) {
@@ -286,7 +316,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUserProfile(profile);
         try {
           localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-        } catch {}
+        } catch {
+          // Ignore storage quota errors
+        }
         return profile;
       }
     } catch (err) {
@@ -300,15 +332,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Atomically checks Firestore /users/{uid}, updates profile and registration state,
    * eliminates race conditions, and directs user to /dashboard or OnboardingModal.
    */
-  const processAuthenticatedUser = async (fbUser: FirebaseUser | User): Promise<void> => {
+  const processAuthenticatedUser = async (
+    fbUser: FirebaseUser | User,
+    forceCheck: boolean = false
+  ): Promise<void> => {
     if (!fbUser || !fbUser.uid) return;
 
-    // Prevent concurrent duplicate executions for the same user
-    if (processingUidRef.current === fbUser.uid && currentUser?.uid === fbUser.uid && userProfile) {
+    // Prevent concurrent duplicate executions for the same user unless forced
+    if (
+      !forceCheck &&
+      processingUidRef.current === fbUser.uid &&
+      currentUser?.uid === fbUser.uid &&
+      userProfile
+    ) {
+      setLoading(false);
       setIsLoading(false);
       return;
     }
     processingUidRef.current = fbUser.uid;
+    setLoading(true);
     setIsLoading(true);
 
     const user: User = {
@@ -327,33 +369,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const userRef = doc(db, 'users', user.uid);
-      const timeoutReadPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Firestore read timeout')), 5000)
-      );
-      const docSnap = await Promise.race([getDoc(userRef), timeoutReadPromise]);
+      let docData: FirestoreUserDocData | null = null;
+      let docExists = false;
 
-      const docData = docSnap.exists() ? docSnap.data() : null;
+      try {
+        const timeoutReadPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Firestore read timeout')), 4000)
+        );
+        const docSnap = await Promise.race([getDoc(userRef), timeoutReadPromise]);
+        docExists = docSnap.exists();
+        if (docExists) {
+          docData = docSnap.data() as FirestoreUserDocData;
+        }
+      } catch (firestoreErr) {
+        console.warn('[AVENIR ARENA AUTH] Direct Firestore read fallback:', firestoreErr);
+        try {
+          const localDoc = await firestoreService.getUserDoc(user.uid);
+          if (localDoc) {
+            docExists = true;
+            docData = localDoc as unknown as FirestoreUserDocData;
+          }
+        } catch {
+          // Ignore service read error
+        }
+      }
+
       const isCadetRegistered = Boolean(
+        docExists &&
         docData &&
         (docData.isRegistered === true ||
          docData.isSetupComplete === true ||
-         docData.campus)
+         (docData.campus && (docData.username || docData.firstName)))
       );
 
-      if (!docSnap.exists() || !docData || !isCadetRegistered) {
-        // 1. New user: Atomic state update -> Route to Registration Terminal
+      if (!docExists || !docData || !isCadetRegistered) {
+        // 1. New user or incomplete registration: Route to Registration Terminal (OnboardingModal)
         setCurrentUser(user);
         setUserProfile(null);
         setNeedsRegistration(true);
-        setIsLoading(false);
 
         try {
           localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
           localStorage.removeItem(PROFILE_STORAGE_KEY);
           localStorage.setItem('avenir_needs_registration', 'true');
-        } catch {}
+        } catch {
+          // Ignore storage error
+        }
       } else {
-        // 2. Returning user: Atomic state update -> Load profile & route straight to /dashboard
+        // 2. Returning user: Hydrate user profile into state & route straight to /dashboard
         const existingData = docData;
         const xpVal = Number(existingData.academicXP ?? existingData.xp ?? 0);
         const streakVal = Number(existingData.infiniteTraceStreak ?? 0);
@@ -383,15 +446,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCurrentUser(user);
         setUserProfile(profile);
         setNeedsRegistration(false);
-        setIsLoading(false);
 
         try {
           localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
           localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
           localStorage.removeItem('avenir_needs_registration');
-        } catch {}
+        } catch {
+          // Ignore storage error
+        }
 
-        // Route returning cadet directly to /dashboard if currently on landing/root
+        // Route returning cadet directly to /dashboard if currently on landing/login/root
         if (typeof window !== 'undefined') {
           const currentHash = window.location.hash.replace(/^#/, '').split('?')[0];
           if (!currentHash || currentHash === '/' || currentHash === '/login' || currentHash === '/auth') {
@@ -399,86 +463,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       }
-    } catch (firestoreErr) {
-      console.warn('[AVENIR ARENA AUTH] Firestore read fallback:', firestoreErr);
-      const cached = getInitialStoredProfile();
-      if (cached && (cached.isSetupComplete || cached.campus) && (cached.uid === user.uid || !cached.uid)) {
-        setCurrentUser(user);
-        setUserProfile({ ...cached, uid: user.uid });
-        setNeedsRegistration(false);
-        setIsLoading(false);
-        try {
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-          localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ ...cached, uid: user.uid }));
-          localStorage.removeItem('avenir_needs_registration');
-        } catch {}
-        if (typeof window !== 'undefined') {
-          const currentHash = window.location.hash.replace(/^#/, '').split('?')[0];
-          if (!currentHash || currentHash === '/' || currentHash === '/login' || currentHash === '/auth') {
-            window.location.hash = '/dashboard';
-          }
-        }
-      } else {
-        try {
-          const localDoc = await firestoreService.getUserDoc(user.uid);
-          if (localDoc && (localDoc.isSetupComplete || localDoc.campus)) {
-            const xpVal = Number(localDoc.academicXP ?? localDoc.xp ?? 0);
-            const profile: UserProfile = {
-              uid: localDoc.uid,
-              email: localDoc.email,
-              username: localDoc.username,
-              firstName: localDoc.firstName,
-              lastName: localDoc.lastName,
-              avatarUrl: localDoc.avatarUrl,
-              campus: localDoc.campus,
-              year: localDoc.year || '1st Year',
-              batch: localDoc.batch,
-              bio: localDoc.bio,
-              socialLinks: localDoc.socialLinks,
-              xp: xpVal,
-              academicXP: xpVal,
-              gamesPlayed: localDoc.gamesPlayed,
-              infiniteTraceStreak: localDoc.infiniteTraceStreak,
-              role: localDoc.role,
-              isSetupComplete: true,
-              createdAt: localDoc.createdAt,
-            };
-            setCurrentUser(user);
-            setUserProfile(profile);
-            setNeedsRegistration(false);
-            setIsLoading(false);
-            try {
-              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-              localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-              localStorage.removeItem('avenir_needs_registration');
-            } catch {}
-            if (typeof window !== 'undefined') {
-              const currentHash = window.location.hash.replace(/^#/, '').split('?')[0];
-              if (!currentHash || currentHash === '/' || currentHash === '/login' || currentHash === '/auth') {
-                window.location.hash = '/dashboard';
-              }
-            }
-            return;
-          }
-        } catch {}
-
-        setCurrentUser(user);
-        setUserProfile(null);
-        setNeedsRegistration(true);
-        setIsLoading(false);
-        try {
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-          localStorage.setItem('avenir_needs_registration', 'true');
-        } catch {}
-      }
+    } catch (err) {
+      console.error('[AVENIR ARENA AUTH] User processing error:', err);
+      setCurrentUser(user);
+      setNeedsRegistration(true);
     } finally {
       processingUidRef.current = null;
+      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   // Restore authenticated session and listen to Firebase Auth in the background
   useEffect(() => {
     let isMounted = true;
+
+    // Safety timeout: Ensure loading is never permanently stuck if network/auth hangs
+    const safetyTimer = setTimeout(() => {
+      if (isMounted && !authResolvedRef.current) {
+        console.warn('[AVENIR ARENA AUTH] Auth resolution timeout reached; unblocking loading state.');
+        authResolvedRef.current = true;
+        setLoading(false);
+        setIsLoading(false);
+      }
+    }, 4000);
 
     // Immediately bind traceEngine to authenticated student if present
     const activeUid = currentUser?.uid || initialUser?.uid;
@@ -487,12 +495,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       syncProfileFromFirestore(activeUid).catch(() => {});
     }
 
-    // Check for pending redirect result (handles redirect OAuth flow)
+    // Check for pending redirect result (handles redirect OAuth flow if present)
     getRedirectResult(auth)
       .then(async (result) => {
         if (!isMounted) return;
         if (result && result.user) {
-          await processAuthenticatedUser(result.user);
+          authResolvedRef.current = true;
+          await processAuthenticatedUser(result.user, true);
         }
       })
       .catch((err) => {
@@ -502,6 +511,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen to Firebase Auth state changes for persistent session across page reloads
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (!isMounted) return;
+      authResolvedRef.current = true;
+      clearTimeout(safetyTimer);
 
       if (fbUser) {
         await processAuthenticatedUser(fbUser);
@@ -512,18 +523,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCurrentUser(null);
         setUserProfile(null);
         setNeedsRegistration(false);
+        setLoading(false);
         setIsLoading(false);
+
         try {
           localStorage.removeItem(AUTH_STORAGE_KEY);
           localStorage.removeItem(PROFILE_STORAGE_KEY);
           localStorage.removeItem('avenir_needs_registration');
-        } catch {}
+        } catch {
+          // Ignore storage errors on logout
+        }
         traceEngine.setActiveStudent('');
       }
     });
 
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimer);
       unsubscribe();
     };
   }, []);
@@ -576,38 +592,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * Programmatic Google Login trigger
-   * Strictly uses Firebase Modular signInWithPopup with GoogleAuthProvider.
-   * Eliminates secondary modal fallback to ensure Firebase Auth is single source of truth.
+   * Refactored to use standard Firebase signInWithPopup(auth, googleProvider) with robust error catching.
+   * Immediately after successful sign-in, performs a strict lookup in Firestore (doc(db, 'users', user.uid)).
+   * If the user document exists and has isRegistered: true (or isSetupComplete: true), hydrates profile and routes to /dashboard.
+   * If user document does NOT exist or registration is incomplete, routes them to Registration Terminal (OnboardingModal).
    */
   const loginWithGoogle = async (): Promise<void> => {
     setError(null);
+    setLoading(true);
     setIsLoading(true);
     isLoggingInRef.current = true;
 
     try {
       const res = await signInWithPopup(auth, googleProvider);
       if (res && res.user) {
-        await processAuthenticatedUser(res.user);
+        await processAuthenticatedUser(res.user, true);
         return;
       }
-    } catch (popupErr: any) {
-      console.error('[AVENIR ARENA AUTH] Firebase popup flow error:', popupErr);
-      if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/cancelled-popup-request') {
-        try {
-          await signInWithRedirect(auth, googleProvider);
-          return;
-        } catch (redirectErr) {
-          console.error('[AVENIR ARENA AUTH] Redirect fallback error:', redirectErr);
-        }
-      }
-      if (popupErr?.code === 'auth/popup-closed-by-user') {
-        setError('Login cancelled. Try again.');
+    } catch (popupErr: unknown) {
+      console.error('[AVENIR ARENA AUTH] Firebase signInWithPopup error:', popupErr);
+      const err = popupErr as { code?: string; message?: string };
+      if (err?.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in cancelled. Please try again when ready.');
+      } else if (err?.code === 'auth/popup-blocked') {
+        setError('Authentication popup was blocked by your browser. Please allow popups for this site.');
+      } else if (err?.code === 'auth/cancelled-popup-request') {
+        // Ignored: superseded by concurrent request
+      } else if (err?.code === 'auth/network-request-failed') {
+        setError('Network error during authentication. Please check your internet connection.');
       } else {
-        setError(popupErr?.message || 'Failed to sign in with Google. Please try again.');
+        setError(err?.message || 'Failed to sign in with Google. Please try again.');
       }
-      setIsLoading(false);
     } finally {
       isLoggingInRef.current = false;
+      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -656,7 +675,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Persist to offline resilient storage
-    await firestoreService.setUserDoc(currentUser.uid, updatedPayload as any);
+    await firestoreService.setUserDoc(currentUser.uid, updatedPayload as unknown as Parameters<typeof firestoreService.setUserDoc>[1]);
 
     const updatedProfile: UserProfile = {
       ...updatedPayload,
@@ -709,7 +728,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       try {
         localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(updated));
-      } catch {}
+      } catch {
+        // Ignore storage quota
+      }
       return updated;
     });
 
@@ -781,7 +802,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserProfile(null);
     setNeedsRegistration(false);
     traceEngine.setActiveStudent('');
-    window.location.hash = '/dashboard';
+    window.location.hash = '/';
   };
 
   // Role-Based Access Control (RBAC): Admin check
@@ -799,6 +820,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUser,
         userProfile,
         isAdmin,
+        loading,
         isLoading,
         isOnboardingRequired,
         needsRegistration,

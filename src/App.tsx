@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useRouter } from '@/router';
 import { AppLayout } from '@/components/AppLayout';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -20,14 +21,38 @@ import { OnboardingModal } from '@/components/OnboardingModal';
 import { Logo } from '@/components/Logo';
 
 function App() {
-  const { path, navigate } = useRouter();
-  const { currentUser, isLoading, isOnboardingRequired, needsRegistration, isAdmin } = useAuth();
+  const { path, navigate, isPublic } = useRouter();
+  const {
+    currentUser,
+    loading,
+    isLoading,
+    isOnboardingRequired,
+    needsRegistration,
+    isAdmin,
+  } = useAuth();
+
+  const isAuthInitializing = loading ?? isLoading;
 
   const isAdminSession =
     typeof window !== 'undefined' &&
     sessionStorage.getItem('avenir_admin_session') === 'true';
 
-  if (isLoading) {
+  // Smoothly route authenticated cadet from public ingress URL to /dashboard
+  // Prevents bounce-backs and ensures returning users enter the main dashboard
+  useEffect(() => {
+    if (
+      !isAuthInitializing &&
+      currentUser &&
+      isPublic &&
+      !(isOnboardingRequired || needsRegistration)
+    ) {
+      navigate('/dashboard');
+    }
+  }, [isAuthInitializing, currentUser, isPublic, isOnboardingRequired, needsRegistration, navigate]);
+
+  // 1. Cinematic Auth Initializing Screen
+  // Prevents white-screen flash and stops route guards from redirecting prematurely while Firebase verifies session
+  if (isAuthInitializing) {
     return (
       <div className="min-h-screen bg-obsidian flex flex-col items-center justify-center p-6 text-center select-none">
         <div className="relative flex items-center justify-center h-16 w-16 mb-4">
@@ -42,7 +67,7 @@ function App() {
     );
   }
 
-  // 1. Direct Admin Access if authenticated via Admin Portal
+  // 2. Direct Admin Access if authenticated via Admin Portal
   if (path === '/admin' && isAdminSession) {
     return (
       <AppLayout currentPath={path} onNavigate={navigate}>
@@ -51,7 +76,8 @@ function App() {
     );
   }
 
-  // 2. Unauthenticated -> Show Landing/Auth Screen
+  // 3. Unauthenticated -> Show Landing/Auth Screen
+  // Validates session presence: prevents infinite bounce loops by presenting ingress
   if (!currentUser) {
     return (
       <>
@@ -69,6 +95,7 @@ function App() {
     }
 
     switch (path) {
+      case '/':
       case '/dashboard':
         return <DashboardPage navigate={navigate} />;
       case '/search':
@@ -104,12 +131,12 @@ function App() {
   return (
     <>
       <AuthModal />
-      {/* 3. Authenticated but NO profile -> Mandatory Registration Terminal */}
+      {/* 4. Authenticated Cadet with Incomplete Registration -> Mandatory Registration Terminal */}
       {(isOnboardingRequired || needsRegistration) ? (
         <OnboardingModal />
       ) : (
-        /* 4. Main Portal */
-        <AppLayout currentPath={path} onNavigate={navigate}>
+        /* 5. Main Arena Portal */
+        <AppLayout currentPath={path === '/' ? '/dashboard' : path} onNavigate={navigate}>
           {renderPage()}
         </AppLayout>
       )}
