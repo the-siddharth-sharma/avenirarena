@@ -150,6 +150,7 @@ export function LeaderboardPage() {
               xp: effectiveXP,
               gamesPlayed: Number(data.gamesPlayed || 0),
               streak: Number(data.infiniteTraceStreak || data.streak || 0),
+              weeklyGrowthPct: Number(data.weeklyGrowthPct ?? 0),
               role: data.role || 'cadet',
             });
           });
@@ -171,6 +172,8 @@ export function LeaderboardPage() {
               xp: c.xp,
               gamesPlayed: c.gamesPlayed,
               streak: c.infiniteTraceStreak,
+              weeklyGrowthPct: Number((c as any).weeklyGrowthPct ?? 0),
+
               role: c.role || 'cadet',
             });
           }
@@ -194,6 +197,7 @@ export function LeaderboardPage() {
             xp: currentXP,
             gamesPlayed: Number(userProfile?.gamesPlayed ?? existing.gamesPlayed ?? 0),
             streak: Number(userProfile?.infiniteTraceStreak ?? existing.streak ?? 0),
+            weeklyGrowthPct: Number((userProfile as any)?.weeklyGrowthPct ?? existing.weeklyGrowthPct ?? 0),
             role: userProfile?.role || 'cadet',
           });
         }
@@ -264,6 +268,8 @@ export function LeaderboardPage() {
             zoneLabel: rank <= 3 ? 'Promotion Zone' : rank >= 8 ? 'Relegation Risk' : 'Safe Tier',
             gamesPlayed: cadet.gamesPlayed,
             streak: cadet.streak,
+            streakDays: cadet.streak,
+            weeklyGrowthPct: cadet.weeklyGrowthPct,
           };
         });
 
