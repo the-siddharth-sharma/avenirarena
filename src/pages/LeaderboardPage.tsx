@@ -198,7 +198,8 @@ export function LeaderboardPage() {
             xp: currentXP,
             gamesPlayed: Number(userProfile?.gamesPlayed ?? existing.gamesPlayed ?? 0),
             streak: currentStreak,
-            weeklyGrowthPct: Number(userProfile?.weeklyGrowthPct ?? existing.weeklyGrowthPct ?? 32),
+            weeklyGrowthPct: Number((userProfile as any)?.weeklyGrowthPct ?? existing.weeklyGrowthPct ?? 0),
+
             role: userProfile?.role || 'cadet',
           });
         }
