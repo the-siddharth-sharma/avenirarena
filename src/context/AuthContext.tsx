@@ -46,7 +46,7 @@ export interface UserProfile {
   academicXP?: number;
   gamesPlayed?: number;
   infiniteTraceStreak?: number;
-  role?: 'admin' | 'cadet';
+  role?: 'admin' | 'cadet' | 'faculty';
   isSetupComplete: boolean;
   createdAt?: string;
 }
@@ -70,7 +70,7 @@ interface FirestoreUserDocData {
   academicXP?: number;
   gamesPlayed?: number;
   infiniteTraceStreak?: number;
-  role?: 'admin' | 'cadet';
+  role?: 'admin' | 'cadet' | 'faculty';
   isRegistered?: boolean;
   isSetupComplete?: boolean;
   createdAt?: string;
@@ -127,6 +127,7 @@ interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
   isAdmin: boolean;
+  isFaculty: boolean;
   loading: boolean;
   isLoading: boolean;
   isOnboardingRequired: boolean;
@@ -137,6 +138,7 @@ interface AuthContextType {
   handleGoogleError: () => void;
   loginWithGoogle: () => Promise<void>;
   saveUserProfile: (profileData: Omit<UserProfile, 'isSetupComplete'>) => Promise<void>;
+  updateUsername: (newUsername: string) => Promise<{ success: boolean; error?: string }>;
   updateUserXP: (delta: number) => Promise<void>;
   refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
@@ -848,6 +850,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   /**
+   * Dedicated Username / Callsign Editor:
+   * Validates format (3-20 characters, alphanumeric & underscores),
+   * checks real-time uniqueness against Firestore,
+   * updates the user's canonical document at users/{uid},
+   * synchronizes state and local storage without creating a second account.
+   */
+  const updateUsername = async (
+    newUsername: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) {
+      return { success: false, error: 'User is not authenticated.' };
+    }
+
+    const trimmed = newUsername.trim();
+    if (!trimmed) {
+      return { success: false, error: 'Username cannot be empty.' };
+    }
+    if (trimmed.length < 3 || trimmed.length > 20) {
+      return { success: false, error: 'Username must be between 3 and 20 characters.' };
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+      return { success: false, error: 'Username can only contain letters, numbers, and underscores.' };
+    }
+
+    // Availability validation against reserved callsigns & other users
+    const isAvailable = await checkUsernameUnique(trimmed, currentUser.uid, currentUser.email);
+    if (!isAvailable) {
+      return { success: false, error: `Callsign '${trimmed}' is already claimed by another operative.` };
+    }
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const now = new Date().toISOString();
+
+      // 1. Authoritative update in Firestore
+      await setDoc(
+        userRef,
+        {
+          username: trimmed,
+          displayName: trimmed,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+
+      // 2. Synchronize offline/cache storage
+      try {
+        const localUsers = JSON.parse(localStorage.getItem('avenir_firestore_users_v1') || '{}');
+        if (localUsers[currentUser.uid]) {
+          localUsers[currentUser.uid].username = trimmed;
+          localUsers[currentUser.uid].displayName = trimmed;
+          localUsers[currentUser.uid].updatedAt = now;
+          localStorage.setItem('avenir_firestore_users_v1', JSON.stringify(localUsers));
+        }
+      } catch {}
+
+      // 3. Synchronize userProfile in state and local storage
+      if (userProfile) {
+        const nextProfile: UserProfile = { ...userProfile, username: trimmed };
+        setUserProfile(nextProfile);
+        try {
+          localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(nextProfile));
+        } catch {}
+      }
+
+      // 4. Synchronize currentUser in state and local storage
+      const updatedUser: User = { ...currentUser, displayName: trimmed };
+      setCurrentUser(updatedUser);
+      try {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+      } catch {}
+
+      return { success: true };
+    } catch (err: unknown) {
+      console.error('[AVENIR ARENA AUTH] Failed to update username:', err);
+      return {
+        success: false,
+        error: (err as Error)?.message || 'Failed to update username in database.',
+      };
+    }
+  };
+
+  /**
    * Centralized XP Persistence:
    * Instantly updates local state for UI responsiveness,
    * then updates the user's academicXP in Firestore using atomic increment(xpEarned) in the background.
@@ -946,10 +1031,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.hash = '/';
   };
 
-  // Role-Based Access Control (RBAC): Admin check
+  // Role-Based Access Control (RBAC): Admin and Faculty checks
   const isAdmin = Boolean(
     currentUser?.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ||
     userProfile?.role === 'admin'
+  );
+
+  const isFaculty = Boolean(
+    isAdmin ||
+    userProfile?.role === 'faculty'
   );
 
   // Flag determining whether mandatory first-time onboarding modal should be displayed
@@ -961,6 +1051,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUser,
         userProfile,
         isAdmin,
+        isFaculty,
         loading,
         isLoading,
         isOnboardingRequired,
@@ -971,6 +1062,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         handleGoogleError,
         loginWithGoogle,
         saveUserProfile,
+        updateUsername,
         updateUserXP,
         refreshProfile,
         logout,

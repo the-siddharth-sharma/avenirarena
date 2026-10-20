@@ -18,6 +18,7 @@ import { useAuth } from '@/context/AuthContext';
 import { AuthModal } from '@/components/AuthModal';
 import { LandingAuthScreen } from '@/components/LandingAuthScreen';
 import { OnboardingModal } from '@/components/OnboardingModal';
+import { FacultyAccessDenied } from '@/components/FacultyAccessDenied';
 import { Logo } from '@/components/Logo';
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
     isOnboardingRequired,
     needsRegistration,
     isAdmin,
+    isFaculty,
   } = useAuth();
 
   const isAuthInitializing = loading ?? isLoading;
@@ -117,6 +119,9 @@ function App() {
       case '/activity':
         return <ActivityPage />;
       case '/faculty':
+        if (!isFaculty && !isAdmin && !isAdminSession) {
+          return <FacultyAccessDenied navigate={navigate} />;
+        }
         return <FacultyPage />;
       case '/admin':
         if (!isAdmin && !isAdminSession) {

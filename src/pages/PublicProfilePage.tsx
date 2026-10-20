@@ -23,6 +23,7 @@ import {
 import { Card } from '@/components/Card';
 import { useAuth } from '@/context/AuthContext';
 import { firestoreService, type UserProfileDoc } from '@/firebaseConfig';
+import { getSingleCadetPresence, isCadetOnline, formatLastSeen, CadetPresence } from '@/data/presence';
 
 interface PublicProfilePageProps {
   playerId?: string;
@@ -68,6 +69,27 @@ export function PublicProfilePage({ playerId = 'me', navigate }: PublicProfilePa
   const [loading, setLoading] = useState(() => initialSelfDoc === null);
   const [profileDoc, setProfileDoc] = useState<UserProfileDoc | null>(initialSelfDoc);
   const [notFound, setNotFound] = useState(false);
+  const [targetPresence, setTargetPresence] = useState<CadetPresence | null>(null);
+
+  useEffect(() => {
+    if (!profileDoc?.uid) return;
+    if (isTargetingSelf) {
+      setTargetPresence({
+        uid: profileDoc.uid,
+        username: profileDoc.username || 'cadet',
+        lastSeen: Date.now(),
+        status: 'online',
+      });
+      return;
+    }
+    let isMounted = true;
+    getSingleCadetPresence(profileDoc.uid).then((p) => {
+      if (isMounted) setTargetPresence(p);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [profileDoc?.uid, isTargetingSelf]);
 
   // Fetch from Firestore
   useEffect(() => {
@@ -307,12 +329,22 @@ export function PublicProfilePage({ playerId = 'me', navigate }: PublicProfilePa
               </div>
 
               {/* Status Indicator */}
-              <div
-                className="absolute bottom-1 right-2 w-5 h-5 rounded-full bg-obsidian flex items-center justify-center border-2 border-graphite"
-                title="Cadet Status: Active"
-              >
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
+              {(() => {
+                const isOnline = isTargetingSelf || isCadetOnline(targetPresence);
+                const statusText = isOnline ? 'Active Now' : formatLastSeen(targetPresence?.lastSeen);
+                return (
+                  <div
+                    className="absolute bottom-1 right-2 w-5 h-5 rounded-full bg-obsidian flex items-center justify-center border-2 border-graphite"
+                    title={`Cadet Status: ${statusText}`}
+                  >
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-muted/50'
+                      }`}
+                    />
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Quick Stats Pill Bar */}

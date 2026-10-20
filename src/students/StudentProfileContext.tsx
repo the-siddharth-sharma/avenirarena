@@ -205,6 +205,7 @@ function getInitialStudents(): StudentProfile[] {
         id: u.uid,
         studentId: u.uid.replace('google-', 'G-').slice(0, 10).toUpperCase(),
         displayName: name,
+        username: profile?.username || name,
         email: u.email || '',
         avatarInitials: getInitials(name),
         avatarColor: 'from-gold-500 to-gold-700',
@@ -374,6 +375,7 @@ export function StudentProfileProvider({ children }: { children: ReactNode }) {
           : {
               ...student,
               ...changes,
+              username: changes.username || student.username || changes.displayName,
               avatarInitials: getInitials(changes.displayName),
               profileCompletion: calculateCompletion(changes),
             }

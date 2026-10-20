@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { db } from '@/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { firestoreService, fetchRealtimeCadets } from '@/firebaseConfig';
+import { subscribeToPresence, isCadetOnline, formatLastSeen, CadetPresence } from '@/data/presence';
 
 export interface FirestoreCadet {
   uid: string;
@@ -49,6 +50,14 @@ export function SearchPage({ navigate }: SearchPageProps) {
   const [results, setResults] = useState<FirestoreCadet[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasQueried, setHasQueried] = useState(false);
+  const [presenceMap, setPresenceMap] = useState<Record<string, CadetPresence>>({});
+
+  useEffect(() => {
+    const unsub = subscribeToPresence((map) => {
+      setPresenceMap(map);
+    });
+    return unsub;
+  }, []);
 
   /**
    * Search users directly using unified fetchRealtimeCadets
@@ -250,10 +259,25 @@ export function SearchPage({ navigate }: SearchPageProps) {
                       )}
                     </span>
 
-                    <span className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      ONLINE
-                    </span>
+                    {(() => {
+                      const presence = presenceMap[player.uid];
+                      const isOnline = isCadetOnline(presence);
+                      const statusLabel = isOnline ? 'ONLINE' : formatLastSeen(presence?.lastSeen);
+                      return (
+                        <span
+                          className={`flex items-center gap-1.5 text-[10px] font-mono ${
+                            isOnline ? 'text-emerald-400' : 'text-muted'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-muted/40'
+                            }`}
+                          />
+                          {statusLabel}
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Identity Row */}

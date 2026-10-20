@@ -1,19 +1,23 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Activity as ActivityIcon,
+  AlertCircle,
   Award,
   Calendar,
+  Check,
   CheckCircle2,
   Edit3,
   ExternalLink,
   Globe,
   Hash,
   Linkedin,
+  Loader2,
   Lock,
   MapPin,
   Share2,
   Target,
   User,
+  X,
   Zap,
 } from 'lucide-react';
 import * as Icons from 'lucide-react';
@@ -25,7 +29,7 @@ import { StatCard } from '@/components/StatCard';
 import { badgeDefinitions } from '@/data/progressData';
 import { getEditableProfile } from '@/data/studentProfiles';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, checkUsernameUnique } from '@/context/AuthContext';
 import type { EditableStudentProfile } from '@/types';
 
 type ProfileTab = 'overview' | 'activity' | 'badges';
@@ -43,16 +47,118 @@ export function ProfilePage() {
     earnedBadges: earnedBadgeRecords,
     xpTransactions,
   } = useStudentProfiles();
-  const { userProfile, saveUserProfile, currentUser } = useAuth();
+  const { userProfile, saveUserProfile, updateUsername, currentUser } = useAuth();
 
   const [tab, setTab] = useState<ProfileTab>('overview');
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditableStudentProfile>(() => ({
     ...getEditableProfile(selectedStudent),
+    username: userProfile?.username || selectedStudent.username || selectedStudent.displayName,
     linkedin: userProfile?.socialLinks?.linkedin || '',
     other: userProfile?.socialLinks?.other || '',
   }));
   const [errors, setErrors] = useState<Partial<Record<keyof EditableStudentProfile, string>>>({});
+
+  // ── Dedicated Callsign / Username Editor State ──
+  const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState<
+    'idle' | 'validating' | 'available' | 'taken' | 'invalid'
+  >('idle');
+  const [usernameError, setUsernameError] = useState('');
+  const [usernameSuccess, setUsernameSuccess] = useState('');
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
+
+  const openUsernameEditor = () => {
+    const current =
+      userProfile?.username || selectedStudent.username || selectedStudent.displayName;
+    setNewUsername(current);
+    setUsernameStatus('available');
+    setUsernameError('');
+    setUsernameSuccess('');
+    setIsUsernameModalOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isUsernameModalOpen) return;
+    const trimmed = newUsername.trim();
+    const current =
+      userProfile?.username || selectedStudent.username || selectedStudent.displayName;
+
+    if (!trimmed) {
+      setUsernameStatus('invalid');
+      setUsernameError('Callsign cannot be empty.');
+      return;
+    }
+    if (trimmed.length < 3 || trimmed.length > 20) {
+      setUsernameStatus('invalid');
+      setUsernameError('Callsign must be 3-20 characters.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+      setUsernameStatus('invalid');
+      setUsernameError('Only alphanumeric characters and underscores allowed.');
+      return;
+    }
+
+    if (trimmed.toLowerCase() === current.toLowerCase()) {
+      setUsernameStatus('available');
+      setUsernameError('');
+      return;
+    }
+
+    setUsernameStatus('validating');
+    setUsernameError('');
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      try {
+        const isAvailable = await checkUsernameUnique(
+          trimmed,
+          currentUser?.uid,
+          currentUser?.email
+        );
+        if (!isMounted) return;
+        if (isAvailable) {
+          setUsernameStatus('available');
+          setUsernameError('');
+        } else {
+          setUsernameStatus('taken');
+          setUsernameError(`Callsign '${trimmed}' is already claimed by another operative.`);
+        }
+      } catch {
+        if (isMounted) setUsernameStatus('available');
+      }
+    }, 350);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [newUsername, isUsernameModalOpen, userProfile, selectedStudent, currentUser]);
+
+  const handleSaveUsername = async () => {
+    if (usernameStatus !== 'available') return;
+    setIsSavingUsername(true);
+    setUsernameError('');
+    setUsernameSuccess('');
+
+    const res = await updateUsername(newUsername.trim());
+    if (res.success) {
+      updateSelectedStudent({
+        ...form,
+        username: newUsername.trim(),
+        displayName: newUsername.trim(),
+      });
+      setUsernameSuccess('Callsign updated & synchronized across Arena mainframe!');
+      setTimeout(() => {
+        setIsUsernameModalOpen(false);
+        setUsernameSuccess('');
+      }, 1200);
+    } else {
+      setUsernameError(res.error || 'Failed to update username.');
+    }
+    setIsSavingUsername(false);
+  };
 
   const tabs: { key: ProfileTab; label: string; icon: typeof Zap }[] = [
     { key: 'overview', label: 'Overview', icon: Zap },
@@ -65,6 +171,10 @@ export function ProfilePage() {
 
   const accountRows = useMemo(
     () => [
+      {
+        label: 'Arena Callsign (Username)',
+        value: `@${userProfile?.username || selectedStudent.username || selectedStudent.displayName}`,
+      },
       { label: 'Display Name', value: selectedStudent.displayName },
       { label: 'Student ID', value: selectedStudent.studentId },
       { label: 'Course / Branch', value: selectedStudent.courseBranch },
@@ -178,6 +288,15 @@ export function ProfilePage() {
               <h2 className="text-2xl font-display font-bold text-ivory">
                 {selectedStudent.displayName}
               </h2>
+              <button
+                type="button"
+                onClick={openUsernameEditor}
+                className="px-2.5 py-1 rounded-lg border border-gold-400/40 bg-gold-400/10 hover:bg-gold-400/20 text-gold-400 text-xs font-mono font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
+                title="Edit Arena Callsign (Username)"
+              >
+                <Edit3 className="w-3 h-3 group-hover:scale-110 transition-transform" />
+                <span>@{userProfile?.username || selectedStudent.username || selectedStudent.displayName}</span>
+              </button>
               <span className="badge bg-gold-400/10 text-gold-400">
                 Level {selectedStudent.level}
               </span>
@@ -566,6 +685,130 @@ export function ProfilePage() {
               </button>
               <button onClick={saveProfile} className="btn btn-primary">
                 Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dedicated Callsign / Username Editor Modal ── */}
+      {isUsernameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/85 backdrop-blur-md animate-fade-in">
+          <div className="relative max-w-md w-full rounded-2xl border border-gold-400/40 bg-graphite p-6 sm:p-7 shadow-2xl overflow-hidden space-y-4">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gold-400/10 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="flex items-center justify-between border-b border-line pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-base text-ivory">
+                    Edit Arena Callsign
+                  </h3>
+                  <p className="text-[11px] font-mono text-muted">
+                    Update your unique handle across Global Search & Leaderboards
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsUsernameModalOpen(false)}
+                className="p-1.5 rounded-lg border border-line bg-elevated text-muted hover:text-ivory"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {usernameSuccess && (
+              <div className="p-3 rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 text-xs flex items-center gap-2 animate-fade-in font-mono">
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{usernameSuccess}</span>
+              </div>
+            )}
+
+            {usernameError && (
+              <div className="p-3 rounded-xl border border-red-500/40 bg-red-950/40 text-red-300 text-xs flex items-center gap-2 animate-fade-in font-mono">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{usernameError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-mono font-medium text-ivory">
+                NEW ARENA CALLSIGN
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none font-mono text-sm text-gold-400 font-bold">
+                  @
+                </span>
+                <input
+                  type="text"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder="e.g. CyberVance"
+                  maxLength={20}
+                  className={`w-full pl-8 pr-10 py-3 rounded-xl border bg-obsidian text-ivory text-sm font-mono placeholder:text-muted/60 transition-all focus:outline-none ${
+                    usernameStatus === 'taken' || usernameStatus === 'invalid'
+                      ? 'border-red-500/80 focus:border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+                      : usernameStatus === 'available'
+                      ? 'border-emerald-500/80 focus:border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                      : 'border-line focus:border-gold-400 focus:shadow-[0_0_20px_rgba(208,180,119,0.2)]'
+                  }`}
+                />
+                <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                  {usernameStatus === 'validating' ? (
+                    <Loader2 className="h-4 w-4 text-gold-400 animate-spin" />
+                  ) : usernameStatus === 'available' ? (
+                    <Check className="h-4 w-4 text-emerald-400" />
+                  ) : usernameStatus === 'taken' || usernameStatus === 'invalid' ? (
+                    <X className="h-4 w-4 text-red-400" />
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] font-mono pt-1">
+                <span className="text-muted">3-20 characters, alphanumeric & underscores.</span>
+                <span className="text-muted">{newUsername.length}/20</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl border border-line bg-elevated/40 text-[11px] font-mono text-muted space-y-1">
+              <p className="text-ivory font-semibold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-gold-400" />
+                Persistent Identity Guarantee
+              </p>
+              <p>
+                Changing your callsign updates your public dossier and search records immediately. All accrued XP, streak, badges, and game completions remain fully intact.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-line">
+              <button
+                type="button"
+                onClick={() => setIsUsernameModalOpen(false)}
+                className="btn btn-secondary text-xs px-4 py-2"
+                disabled={isSavingUsername}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveUsername}
+                disabled={usernameStatus !== 'available' || isSavingUsername}
+                className="btn btn-primary text-xs px-5 py-2 flex items-center gap-2 shadow-[0_0_15px_rgba(208,180,119,0.3)] disabled:opacity-50"
+              >
+                {isSavingUsername ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving Callsign...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Callsign</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

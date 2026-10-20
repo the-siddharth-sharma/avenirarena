@@ -15,7 +15,7 @@ interface SidebarProps {
 
 export function Sidebar({ currentPath, onNavigate, isOpen, onClose }: SidebarProps) {
   const { selectedStudent } = useStudentProfiles();
-  const { currentUser, userProfile, openAuthModal } = useAuth();
+  const { currentUser, userProfile, openAuthModal, isFaculty } = useAuth();
 
   // Persistent collapsible state across route changes
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -125,7 +125,9 @@ export function Sidebar({ currentPath, onNavigate, isOpen, onClose }: SidebarPro
           )}
 
           <div className="space-y-0.5">
-            {navItems.map((item) => {
+            {navItems
+              .filter((item) => (item.path === '/faculty' ? isFaculty : true))
+              .map((item) => {
               const Icon = item.icon;
               const isActive = currentPath === item.path;
 

@@ -22,7 +22,7 @@ export interface UserProfileDoc {
     linkedin: string;
     other?: string;
   };
-  role: 'admin' | 'cadet';
+  role: 'admin' | 'cadet' | 'faculty';
   isSetupComplete: boolean;
   createdAt: string;
   updatedAt?: string;

@@ -33,6 +33,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import { fetchRealtimeCadets, type RealtimeCadet } from '@/firebaseConfig';
+import { isCadetOnline } from '@/data/presence';
 
 export interface ChallengeInvite {
   id: string;
@@ -248,8 +249,8 @@ export function CommunityPage({ navigate }: CommunityPageProps) {
 
           snapshot.docs.forEach((docSnap) => {
             const d = docSnap.data() as OnlineCadetRecord;
-            // A cadet is actively online if heartbeat is within last 120 seconds and status is online
-            if (d && d.status === 'online' && d.lastSeen && now - d.lastSeen < 120000) {
+            // A cadet is actively online if heartbeat timestamp is valid and within threshold
+            if (d && isCadetOnline(d)) {
               records.push({
                 uid: docSnap.id,
                 username: d.username || 'Cadet',

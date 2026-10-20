@@ -31,6 +31,7 @@ export interface StudentBadge {
 export interface Student {
   id: string;
   displayName: string;
+  username?: string;
   studentId: string;
   email: string;
   avatarInitials: string;
@@ -55,6 +56,7 @@ export type EditableStudentProfile = Pick<
   Student,
   'displayName' | 'avatarColor' | 'courseBranch' | 'year' | 'batch' | 'campus'
 > & {
+  username?: string;
   linkedin?: string;
   other?: string;
 };
