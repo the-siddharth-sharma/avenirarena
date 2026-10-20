@@ -8,6 +8,7 @@ import type {
   ContinueLearningItem,
   Notification,
 } from '@/types';
+import { LEADERBOARD_BADGES } from './leaderboardBadges';
 
 // ─── Initial Cadet Template (Strict 0 XP Starting State) ──────────
 export const demoStudent: Student = {
@@ -17,6 +18,25 @@ export const demoStudent: Student = {
   email: '',
   avatarInitials: 'CO',
   avatarColor: 'from-[var(--c-accent)] to-[var(--c-accent-2)]',
+<<<<<<< HEAD
+  level: 14,
+  totalXP: 8470,
+  currentLevelXP: 470,
+  nextLevelXP: 800,
+  streak: 12,
+  completedQuests: 87,
+  courseBranch: 'Computer Science — Data Systems',
+  year: 'Year 2',
+  batch: 'Batch 2026 — Section B',
+  campus: 'North Campus',
+  joinedDate: 'August 2025',
+  streakDays: 14,
+  weeklyGrowthPct: 48,
+  badges: [
+    LEADERBOARD_BADGES['Consistent Player'],
+    LEADERBOARD_BADGES['Consistent Learning Growth'],
+  ],
+=======
   level: 1,
   totalXP: 0,
   currentLevelXP: 0,
@@ -28,6 +48,7 @@ export const demoStudent: Student = {
   batch: 'Batch 2026',
   campus: 'MSOT Ghaziabad',
   joinedDate: new Date().toISOString(),
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 };
 
 // ─── Games library ────────────────────────────────────────────────
@@ -182,9 +203,172 @@ export const demoQuests: Quest[] = [
   },
 ];
 
+<<<<<<< HEAD
+// ─── Leaderboard ──────────────────────────────────────────────────
+export const demoLeaderboard: LeaderboardEntry[] = [
+  {
+    id: 'lb-001',
+    rank: 1,
+    displayName: 'Kai Patel',
+    level: 19,
+    totalXP: 12450,
+    avatarInitials: 'KP',
+    avatarColor: 'from-[var(--c-warning)] to-[var(--c-error)]',
+    batch: 'Batch 2026 — Section A',
+    campus: 'North Campus',
+    streakDays: 31,
+    weeklyGrowthPct: 74,
+    badges: [LEADERBOARD_BADGES['Consistent Player'], LEADERBOARD_BADGES['Master Learner']],
+  },
+  {
+    id: 'lb-002',
+    rank: 2,
+    displayName: 'Sofia Rivera',
+    level: 18,
+    totalXP: 11820,
+    avatarInitials: 'SR',
+    avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-accent)]',
+    batch: 'Batch 2026 — Section A',
+    campus: 'South Campus',
+    streakDays: 18,
+    weeklyGrowthPct: 82,
+    badges: [LEADERBOARD_BADGES['Consistent Learning Growth'], LEADERBOARD_BADGES['Consistent Player']],
+  },
+  {
+    id: 'lb-003',
+    rank: 3,
+    displayName: 'Devon Kim',
+    level: 17,
+    totalXP: 10940,
+    avatarInitials: 'DK',
+    avatarColor: 'from-[var(--c-success)] to-[var(--c-accent-2)]',
+    batch: 'Batch 2026 — Section B',
+    campus: 'North Campus',
+    streakDays: 22,
+    weeklyGrowthPct: 65,
+    badges: [LEADERBOARD_BADGES['Consistent Player'], LEADERBOARD_BADGES['Consistent Learning Growth']],
+  },
+  {
+    id: 'lb-004',
+    rank: 4,
+    displayName: 'Aria Chen',
+    level: 14,
+    totalXP: 8470,
+    avatarInitials: 'AC',
+    avatarColor: 'from-[var(--c-accent)] to-[var(--c-accent-2)]',
+    batch: 'Batch 2026 — Section B',
+    campus: 'North Campus',
+    isCurrentUser: true,
+    streakDays: 14,
+    weeklyGrowthPct: 48,
+    badges: [LEADERBOARD_BADGES['Consistent Player'], LEADERBOARD_BADGES['Consistent Learning Growth']],
+  },
+  {
+    id: 'lb-005',
+    rank: 5,
+    displayName: 'Maya Okafor',
+    level: 16,
+    totalXP: 9210,
+    avatarInitials: 'MO',
+    avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-success)]',
+    batch: 'Batch 2026 — Section C',
+    campus: 'South Campus',
+    streakDays: 14,
+    weeklyGrowthPct: 56,
+    badges: [LEADERBOARD_BADGES['Consistent Learning Growth']],
+  },
+  {
+    id: 'lb-006',
+    rank: 6,
+    displayName: 'Liam Foster',
+    level: 15,
+    totalXP: 8800,
+    avatarInitials: 'LF',
+    avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-accent)]',
+    batch: 'Batch 2026 — Section B',
+    campus: 'East Campus',
+    streakDays: 9,
+    weeklyGrowthPct: 38,
+    badges: [LEADERBOARD_BADGES['Consistent Player']],
+  },
+  {
+    id: 'lb-007',
+    rank: 7,
+    displayName: 'Zara Hussain',
+    level: 15,
+    totalXP: 8650,
+    avatarInitials: 'ZH',
+    avatarColor: 'from-[var(--c-warning)] to-[var(--c-accent)]',
+    batch: 'Batch 2026 — Section A',
+    campus: 'East Campus',
+    streakDays: 16,
+    weeklyGrowthPct: 44,
+    badges: [LEADERBOARD_BADGES['Consistent Player']],
+  },
+  {
+    id: 'lb-008',
+    rank: 8,
+    displayName: 'Noah Williams',
+    level: 14,
+    totalXP: 8300,
+    avatarInitials: 'NW',
+    avatarColor: 'from-[var(--c-error)] to-[var(--c-warning)]',
+    batch: 'Batch 2026 — Section C',
+    campus: 'North Campus',
+    streakDays: 7,
+    weeklyGrowthPct: 62,
+    badges: [LEADERBOARD_BADGES['Consistent Learning Growth']],
+  },
+  {
+    id: 'lb-009',
+    rank: 9,
+    displayName: 'Iris Tanaka',
+    level: 13,
+    totalXP: 7900,
+    avatarInitials: 'IT',
+    avatarColor: 'from-[var(--c-success)] to-[var(--c-warning)]',
+    batch: 'Batch 2026 — Section B',
+    campus: 'South Campus',
+    streakDays: 25,
+    weeklyGrowthPct: 29,
+    badges: [LEADERBOARD_BADGES['Consistent Player']],
+  },
+  {
+    id: 'lb-010',
+    rank: 10,
+    displayName: 'Eli Brooks',
+    level: 13,
+    totalXP: 7750,
+    avatarInitials: 'EB',
+    avatarColor: 'from-[var(--c-accent-2)] to-[var(--c-accent)]',
+    batch: 'Batch 2026 — Section C',
+    campus: 'East Campus',
+    streakDays: 11,
+    weeklyGrowthPct: 35,
+    badges: [LEADERBOARD_BADGES['Consistent Learning Growth']],
+  },
+];
+
+// ─── Activity feed ────────────────────────────────────────────────
+export const demoActivities: Activity[] = [
+  { id: 'act-001', date: '2026-10-13', type: 'quiz', title: 'Daily Quiz: Complexity Analysis', detail: 'Completed 3 of 5 questions', xpEarned: 80 },
+  { id: 'act-002', date: '2026-10-13', type: 'game', title: 'DSA Dash', detail: 'Solved 4 array puzzles', xpEarned: 120 },
+  { id: 'act-003', date: '2026-10-13', type: 'quest', title: 'Recursion Challenge', detail: 'Solved 1 of 3 recursion problems', xpEarned: 60 },
+  { id: 'act-004', date: '2026-10-12', type: 'game', title: 'Logic Lab', detail: 'Completed Boolean brain-teaser set', xpEarned: 90 },
+  { id: 'act-005', date: '2026-10-12', type: 'achievement', title: 'Badge Earned: Quick Thinker', detail: 'Solved 10 problems under 2 minutes each', xpEarned: 150 },
+  { id: 'act-006', date: '2026-10-12', type: 'quest', title: 'Daily Streak Check-in', detail: 'Maintained 11-day streak', xpEarned: 50 },
+  { id: 'act-007', date: '2026-10-11', type: 'game', title: 'Code Quest', detail: 'Cleared the Sorting Kingdom', xpEarned: 200 },
+  { id: 'act-008', date: '2026-10-11', type: 'level-up', title: 'Reached Level 14', detail: 'Unlocked new weekly quests', xpEarned: 0 },
+  { id: 'act-009', date: '2026-10-10', type: 'quiz', title: 'Daily Quiz: Big-O Notation', detail: 'Scored 4 of 5', xpEarned: 100 },
+  { id: 'act-010', date: '2026-10-10', type: 'game', title: 'Bit Battles', detail: 'Completed bitwise shift challenge', xpEarned: 70 },
+  { id: 'act-011', date: '2026-10-09', type: 'challenge', title: 'Daily Challenge: Reverse a Linked List', detail: 'Solved in 3 minutes 12 seconds', xpEarned: 130 },
+  { id: 'act-012', date: '2026-10-09', type: 'game', title: 'Recursion Realm', detail: 'Completed tower puzzle', xpEarned: 110 },
+];
+=======
 // ─── Real-Time Leaderboard & Activity Feeds (Purged mock data) ─────
 export const demoLeaderboard: LeaderboardEntry[] = [];
 export const demoActivities: Activity[] = [];
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
 // ─── Badges ───────────────────────────────────────────────────────
 export const demoBadges: Badge[] = [

@@ -15,6 +15,19 @@ export type ActivityType =
   | 'achievement'
   | 'level-up';
 
+export type LeaderboardBadgeTitle =
+  | 'Consistent Player'
+  | 'Consistent Learning Growth'
+  | 'Master Learner';
+
+export interface StudentBadge {
+  title: LeaderboardBadgeTitle;
+  label: string;
+  description: string;
+  icon: string; // Lucide icon name, e.g., 'Flame', 'TrendingUp', 'Award'
+  colorClass: string; // Tailwind color classes for pill styling (e.g. text-amber-400 bg-amber-500/10 border-amber-500/30)
+}
+
 export interface Student {
   id: string;
   displayName: string;
@@ -33,6 +46,9 @@ export interface Student {
   batch: string;
   campus: string;
   joinedDate: string;
+  streakDays?: number;
+  weeklyGrowthPct?: number;
+  badges?: StudentBadge[];
 }
 
 export type EditableStudentProfile = Pick<
@@ -90,6 +106,10 @@ export interface LeaderboardEntry {
   leagueTier?: LeagueTier;
   isCurrentUser?: boolean;
   isDemo?: boolean;
+  streakDays?: number;
+  streak?: number;
+  weeklyGrowthPct?: number;
+  badges?: StudentBadge[];
 }
 
 export interface Activity {

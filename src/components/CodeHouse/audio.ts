@@ -477,7 +477,135 @@ class CodeHouseAudioEngine {
     }
   }
 
-  /** Teardown and dispose */
+  /** Mechanical keyboard click for code editing */
+  public playMechanicalKeyClick() {
+    if (this.settings.sfxMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      // High crisp click
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      const baseFreq = 2200 + Math.random() * 400;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(baseFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(800, now + 0.025);
+
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(baseFreq, now);
+      filter.Q.setValueAtTime(3.0, now);
+
+      gain.gain.setValueAtTime(0.045, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(now);
+      osc.stop(now + 0.035);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /** Bug squishing sound when catching roaming bugs */
+  public playBugSquish() {
+    if (this.settings.sfxMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(650, now);
+      osc.frequency.exponentialRampToValueAtTime(95, now + 0.12);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(now);
+      osc.stop(now + 0.14);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /** Emergency siren when fuse box timer trips */
+  public playEmergencySiren() {
+    if (this.settings.sfxMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sawtooth';
+      // High-low wail
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.linearRampToValueAtTime(620, now + 0.2);
+      osc.frequency.linearRampToValueAtTime(920, now + 0.4);
+      osc.frequency.linearRampToValueAtTime(580, now + 0.6);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(now);
+      osc.stop(now + 0.65);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /** Decor item placed sound (satisfying mechanical snap) */
+  public playDecorPlace() {
+    if (this.settings.sfxMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      const osc1 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+
+      osc1.type = 'triangle';
+      osc1.frequency.setValueAtTime(320, now);
+      osc1.frequency.exponentialRampToValueAtTime(580, now + 0.08);
+
+      gain1.gain.setValueAtTime(0.14, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      osc1.connect(gain1);
+      gain1.connect(this.sfxGain);
+
+      osc1.start(now);
+      osc1.stop(now + 0.18);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /** Triumphant Fanfare */
+  public playFanfare() {
+    this.playValidationSuccess();
+  }
+
+
   public teardown() {
     this.stopAmbience();
   }

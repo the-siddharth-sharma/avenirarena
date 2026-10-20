@@ -3,32 +3,37 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
+  Award,
   Clock,
   Crown,
   Eye,
   EyeOff,
   Filter,
+  Flame,
   Info,
   Medal,
   Minus,
   RotateCcw,
+  Search,
   Shield,
   Sparkles,
+  TrendingUp,
   Trophy,
-  Zap,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card } from '@/components/Card';
 import { StudentAvatar } from '@/components/StudentAvatar';
 import { EmptyState } from '@/components/EmptyState';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
-import type { LeagueTier } from '@/types';
+import type { LeagueTier, StudentBadge } from '@/types';
+import { LEADERBOARD_BADGES } from '@/data/leaderboardBadges';
 import {
   LEAGUE_CONFIGS,
   LEAGUE_TIERS_ORDER,
   executeWeeklyRollover,
   getWeekCountdown,
   type ArenaEntry,
+  type LeaderboardViewTab,
 } from '@/engine/competitiveArena';
 import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '@/firebase';
@@ -46,15 +51,55 @@ function getInitialLeaderboardEntries(): ArenaEntry[] {
   return [];
 }
 
+function renderBadgeIcon(icon: string) {
+  switch (icon) {
+    case 'Flame':
+      return <Flame className="w-3 h-3 text-amber-400 shrink-0" />;
+    case 'TrendingUp':
+      return <TrendingUp className="w-3 h-3 text-emerald-400 shrink-0" />;
+    case 'Award':
+      return <Award className="w-3 h-3 text-purple-400 shrink-0" />;
+    default:
+      return <Sparkles className="w-3 h-3 text-gold-400 shrink-0" />;
+  }
+}
+
+interface BadgeChipProps {
+  badge: StudentBadge;
+  isHighlighted?: boolean;
+  size?: 'sm' | 'xs';
+}
+
+function BadgeChip({ badge, isHighlighted = false, size = 'xs' }: BadgeChipProps) {
+  const sizeClass = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-1.5 py-0.5 text-[10px]';
+  const highlightClass = isHighlighted
+    ? 'ring-1 ring-current shadow-sm scale-105'
+    : 'opacity-90 hover:opacity-100';
+
+  return (
+    <span
+      title={`${badge.title} — ${badge.description}`}
+      className={`inline-flex items-center gap-1 rounded-full font-medium border transition-all ${badge.colorClass} ${sizeClass} ${highlightClass}`}
+    >
+      {renderBadgeIcon(badge.icon)}
+      <span className="truncate max-w-[130px]">{badge.label}</span>
+    </span>
+  );
+}
+
 export function LeaderboardPage() {
   const { selectedStudent } = useStudentProfiles();
   const { currentUser, userProfile } = useAuth();
 
-  // Filters
+  // Active Category View Tab
+  const [activeTab, setActiveTab] = useState<LeaderboardViewTab>('overall');
+
+  // Filters & Search
   const [scope, setScope] = useState<'weekly' | 'all-time'>('weekly');
   const [batchFilter, setBatchFilter] = useState<'all' | 'my-batch'>('all');
   const [campusFilter, setCampusFilter] = useState<string>('all');
   const [leagueFilter, setLeagueFilter] = useState<'all' | LeagueTier>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Live countdown to Sunday midnight
   const [countdown, setCountdown] = useState(() => getWeekCountdown());
@@ -73,6 +118,7 @@ export function LeaderboardPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Fetch top 10 users from Firestore ordered by academicXP descending
   // Real-time synchronization of users from Firestore & Global Search source, ranked by XP & Hardwork
   useEffect(() => {
     let isMounted = true;
@@ -233,6 +279,7 @@ export function LeaderboardPage() {
         console.warn('[AVENIR ARENA LEADERBOARD] Sync error:', err);
         if (isMounted) setIsLoading(false);
       }
+
     }
 
     // Initial load
@@ -304,6 +351,16 @@ export function LeaderboardPage() {
 
   const currentStudentEntry = filteredEntries.find((e) => e.isCurrentUser) || null;
 
+  // Apply search query filter if provided
+  const displayedEntries = searchQuery.trim()
+    ? entries.filter(
+        (e) =>
+          e.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          e.batch.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          e.campus.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : entries;
+
   const toggleAnonymity = () => {
     setStudentPref((prev) => ({ ...prev, anonymous: !prev.anonymous }));
   };
@@ -323,7 +380,10 @@ export function LeaderboardPage() {
   const renderRankChange = (change: number) => {
     if (change > 0) {
       return (
-        <span className="flex items-center text-xs font-mono font-medium text-emerald-400" title={`Up ${change} positions`}>
+        <span
+          className="flex items-center text-xs font-mono font-medium text-emerald-400"
+          title={`Up ${change} positions`}
+        >
           <ArrowUpRight className="w-3.5 h-3.5" />
           +{change}
         </span>
@@ -331,7 +391,10 @@ export function LeaderboardPage() {
     }
     if (change < 0) {
       return (
-        <span className="flex items-center text-xs font-mono font-medium text-crimson-400" title={`Down ${Math.abs(change)} positions`}>
+        <span
+          className="flex items-center text-xs font-mono font-medium text-crimson-400"
+          title={`Down ${Math.abs(change)} positions`}
+        >
           <ArrowDownRight className="w-3.5 h-3.5" />
           {change}
         </span>
@@ -355,7 +418,7 @@ export function LeaderboardPage() {
     <div className="animate-fade-in">
       <PageHeader
         title="Competitive Arena"
-        subtitle="Weekly leagues, deterministic peer rankings, and live academic standings."
+        subtitle="Weekly leagues, Title Badge honorifics, and multi-metric academic standings."
       />
 
       {/* Demo transparency banner */}
@@ -395,7 +458,7 @@ export function LeaderboardPage() {
           />
 
           <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start sm:items-center gap-4">
               <StudentAvatar
                 initials={currentUser ? (userProfile?.username || currentUser.displayName || 'AA').slice(0, 2).toUpperCase() : (studentPref.anonymous ? '?' : selectedStudent.avatarInitials)}
                 color={selectedStudent.avatarColor}
@@ -403,7 +466,7 @@ export function LeaderboardPage() {
                 ring
               />
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span
                     className="badge text-xs font-semibold uppercase tracking-wider"
                     style={{
@@ -428,6 +491,23 @@ export function LeaderboardPage() {
                 <p className="text-xs text-muted mt-0.5">
                   {userProfile?.batch || selectedStudent.batch} • {userProfile?.campus || selectedStudent.campus}
                 </p>
+
+                {/* Active Student Badges */}
+                {selectedStudent.badges && selectedStudent.badges.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                    {selectedStudent.badges.map((badge) => (
+                      <BadgeChip
+                        key={badge.title}
+                        badge={badge}
+                        size="xs"
+                        isHighlighted={
+                          (activeTab === 'consistent-player' && badge.title === 'Consistent Player') ||
+                          (activeTab === 'learning-growth' && badge.title === 'Consistent Learning Growth')
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -663,39 +743,117 @@ export function LeaderboardPage() {
                 const isFirst = entry.rank === 1;
                 const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
 
-                return (
-                  <Card
-                    key={entry.id}
-                    className={`text-center ${
-                      isFirst
-                        ? 'border-gold-400/40 bg-gradient-to-b from-gold-400/10 to-transparent sm:scale-105 z-10'
-                        : ''
-                    }`}
-                  >
-                    <div className="flex justify-center mb-2.5">{rankIcon(entry.rank)}</div>
+          <div className="divide-y divide-line">
+            {displayedEntries.map((entry) => {
+              const tierConfig = LEAGUE_CONFIGS[entry.leagueTier || 'gold'];
 
-                    <div className="flex justify-center">
-                      <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="lg" />
+              return (
+                <div
+                  key={entry.id}
+                  className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${
+                    entry.isCurrentUser
+                      ? 'bg-gold-400/10 border-l-4 border-gold-400'
+                      : 'hover:bg-elevated'
+                  }`}
+                >
+                  {/* Left: Rank & Competitor Details */}
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-12 flex flex-col items-center justify-center shrink-0">
+                      {rankIcon(entry.rank)}
+                      <div className="mt-0.5">{renderRankChange(entry.rankChange ?? 0)}</div>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-center gap-1.5">
-                      <p className="font-display font-semibold text-ivory truncate">{entry.displayName}</p>
-                      {entry.isCurrentUser && (
-                        <span className="badge bg-gold-400/20 text-gold-400 text-[9px]">You</span>
+                    <StudentAvatar initials={entry.avatarInitials} color={entry.avatarColor} size="md" />
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-ivory truncate">{entry.displayName}</p>
+                        {entry.isCurrentUser && (
+                          <span className="badge bg-gold-400/20 text-gold-400 text-[10px]">You</span>
+                        )}
+                        {entry.isDemo && (
+                          <span className="text-[9px] font-mono text-muted/60 uppercase">Cohort</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted truncate">
+                        Level {entry.level} • {entry.batch} • {entry.campus}
+                      </p>
+
+                      {/* Active Title Badges */}
+                      {entry.badges && entry.badges.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                          {entry.badges.map((b) => (
+                            <BadgeChip
+                              key={b.title}
+                              badge={b}
+                              isHighlighted={
+                                (activeTab === 'consistent-player' && b.title === 'Consistent Player') ||
+                                (activeTab === 'learning-growth' && b.title === 'Consistent Learning Growth')
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Zone & Metric Column */}
+                  <div className="flex items-center gap-6 sm:gap-12 shrink-0">
+                    {/* Zone Badge (on md+ screens) */}
+                    <div className="hidden md:flex flex-col items-end">
+                      <span
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded"
+                        style={{ backgroundColor: tierConfig.badgeBg, color: tierConfig.color }}
+                      >
+                        {tierConfig.name}
+                      </span>
+                      {scope === 'weekly' && (
+                        <span
+                          className={`text-[10px] font-mono mt-0.5 ${
+                            entry.zone === 'promotion'
+                              ? 'text-gold-400'
+                              : entry.zone === 'relegation'
+                              ? 'text-crimson-400'
+                              : 'text-muted'
+                          }`}
+                        >
+                          {entry.zone === 'promotion' && '▲ Promotes'}
+                          {entry.zone === 'relegation' && '▼ Relegates'}
+                          {entry.zone === 'safe' && '• Holds'}
+                        </span>
                       )}
                     </div>
 
-                    <div className="flex items-center justify-center gap-2 mt-1">
-                      <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                        style={{ backgroundColor: tierConfig.badgeBg, color: tierConfig.color }}
-                      >
-                        {tierConfig.name.split(' ')[0]}
-                      </span>
-                      <span className="text-xs text-muted">
-                        Lvl {entry.level} · {(entry as any).gamesPlayed || 0} activities
-                      </span>
-                      {renderRankChange(entry.rankChange ?? 0)}
+                    {/* Metric Column */}
+                    <div className="text-right w-28">
+                      {activeTab === 'consistent-player' ? (
+                        <>
+                          <p className="text-sm font-mono font-bold text-amber-400 flex items-center justify-end gap-1">
+                            <Flame className="w-3.5 h-3.5" />
+                            {entry.streakDays ?? entry.streak ?? 0} Days
+                          </p>
+                          <p className="text-[10px] text-muted">active streak</p>
+                        </>
+                      ) : activeTab === 'learning-growth' ? (
+                        <>
+                          <p className="text-sm font-mono font-bold text-emerald-400 flex items-center justify-end gap-1">
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            +{entry.weeklyGrowthPct ?? 0}%
+                          </p>
+                          <p className="text-[10px] text-muted">vs last cycle</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-mono font-bold text-ivory">
+                            {scope === 'weekly'
+                              ? `+${(entry.weeklyXP ?? 0).toLocaleString()}`
+                              : entry.totalXP.toLocaleString()}
+                          </p>
+                          <p className="text-[10px] text-muted">
+                            {scope === 'weekly' ? 'weekly' : 'all-time'}
+                          </p>
+                        </>
+                      )}
                     </div>
 
                     <p className="text-xl font-mono font-bold text-gold-400 mt-2.5">
@@ -814,6 +972,42 @@ export function LeaderboardPage() {
           )}
         </>
       )}
+
+      {/* Title Badge System Legend Card */}
+      <Card className="mt-6 p-4">
+        <div className="flex items-center justify-between pb-2 mb-3 border-b border-line">
+          <p className="section-label text-gold-400 flex items-center gap-1.5">
+            <Award className="w-3.5 h-3.5" /> Title Badge Honorifics
+          </p>
+          <span className="text-[11px] text-muted font-mono">Achievement Titles</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {Object.values(LEADERBOARD_BADGES).map((badge) => (
+            <div
+              key={badge.title}
+              className="p-3 rounded border border-line bg-graphite flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <BadgeChip badge={badge} size="sm" isHighlighted />
+                </div>
+                <p className="text-xs text-ivory font-medium mt-2">{badge.title}</p>
+                <p className="text-[11px] text-muted mt-1 leading-relaxed">{badge.description}</p>
+              </div>
+              <div className="mt-3 pt-2 border-t border-line/60 flex items-center justify-between text-[10px] text-muted">
+                <span>Qualification</span>
+                <span className="font-mono text-gold-400">
+                  {badge.title === 'Consistent Player'
+                    ? 'Streak ≥ 7 Days'
+                    : badge.title === 'Consistent Learning Growth'
+                    ? 'Cycle Growth ≥ 30%'
+                    : 'Level ≥ 15 & Top 10%'}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* League Tiers Legend Card */}
       <Card className="mt-6 p-4">

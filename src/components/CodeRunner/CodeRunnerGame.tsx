@@ -1,16 +1,20 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Code2,
   Flame,
   Heart,
+  Layers,
   Pause,
   Play,
   RotateCcw,
   Sliders,
+  Terminal,
   Trophy,
   Volume2,
   VolumeX,
@@ -19,7 +23,21 @@ import {
 import { codeChallenges, getRandomChallenges, type CodeChallenge } from './challenges';
 import { soundCtrl, type AudioSettings } from './audio';
 import { useStudentProfiles } from '@/students/StudentProfileContext';
+<<<<<<< HEAD
+import {
+  codeRunnerLevels,
+  getSavedProgression,
+  saveProgression,
+  getNextLevel,
+  getPreviousLevel,
+  type CodeRunnerProgressionState,
+} from '@/data/codeRunnerLevels';
+import { LevelSelector } from './LevelSelector';
+import { DsaCodeLabModal } from './DsaCodeLabModal';
+import { LevelCompletionModal } from './LevelCompletionModal';
+=======
 import { usePlayerIdentity, drawPlayerAvatarToCanvas } from '@/components/game-core';
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
 interface Particle {
   x: number;
@@ -60,6 +78,10 @@ interface CodeRunnerGameProps {
   avatarUrl?: string;
 }
 
+<<<<<<< HEAD
+export function CodeRunnerGame({ onExit }: CodeRunnerGameProps) {
+  const { selectedStudent, submitGame, gameCompletions, submitCodeRunnerLevel } = useStudentProfiles();
+=======
 export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: propAvatarUrl }: CodeRunnerGameProps) {
   const { selectedStudent, submitGame, gameCompletions, updateUserXP } = useStudentProfiles();
   const playerIdentity = usePlayerIdentity();
@@ -73,20 +95,62 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
   };
 
   const username = playerIdentityRef.current.username;
+>>>>>>> d7f7895635cfa88d9d6198ee14cbc5ee8f3db9bc
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // High score persistence per student
-  const highScoreKey = `avenir-coderunner-highscore-${selectedStudent?.id || 'default'}`;
-  const getSavedHighScore = () => {
+  // Multi-level DSA progression per student
+  const [progression, setProgression] = useState<CodeRunnerProgressionState>(() =>
+    getSavedProgression(selectedStudent?.id || 'default')
+  );
+
+  useEffect(() => {
+    setProgression(getSavedProgression(selectedStudent?.id || 'default'));
+  }, [selectedStudent?.id]);
+
+  const activeLevel = useMemo(
+    () =>
+      codeRunnerLevels.find((lvl) => lvl.id === progression.currentLevelId) ||
+      codeRunnerLevels[0],
+    [progression.currentLevelId]
+  );
+
+  const prevLevel = useMemo(() => getPreviousLevel(activeLevel.id), [activeLevel.id]);
+  const nextLevel = useMemo(() => getNextLevel(activeLevel.id), [activeLevel.id]);
+  const isNextLevelUnlocked = nextLevel
+    ? progression.unlockedLevelIds.includes(nextLevel.id)
+    : false;
+  const isPrevLevelUnlocked = prevLevel
+    ? progression.unlockedLevelIds.includes(prevLevel.id)
+    : false;
+  const isCurrentCompleted = progression.completedLevelIds.includes(activeLevel.id);
+
+  // Level modals state
+  const [showLevelSelector, setShowLevelSelector] = useState(false);
+  const [showCodeLab, setShowCodeLab] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [completionEarnedXP, setCompletionEarnedXP] = useState(0);
+  const [completionStats, setCompletionStats] = useState<{
+    gatesCleared: number;
+    score: number;
+    streak: number;
+  } | null>(null);
+
+  // High score persistence per student & level
+  const highScoreKey = `avenir-coderunner-highscore-${selectedStudent?.id || 'default'}-${activeLevel.id}`;
+  const getSavedHighScore = useCallback(() => {
     if (typeof window === 'undefined') return 0;
     try {
-      return parseInt(localStorage.getItem(highScoreKey) || '0', 10) || 0;
+      return (
+        progression.levelHighScores[activeLevel.id] ||
+        parseInt(localStorage.getItem(highScoreKey) || '0', 10) ||
+        0
+      );
     } catch {
       return 0;
     }
-  };
+  }, [activeLevel.id, highScoreKey, progression.levelHighScores]);
 
   const [gameState, setGameState] = useState<'start' | 'countdown' | 'playing' | 'paused' | 'review' | 'gameover'>('start');
   const [countdownVal, setCountdownVal] = useState<number | string>(3);
@@ -99,6 +163,11 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
   const [questionsSolved, setQuestionsSolved] = useState(0);
   const [activeChallenge, setActiveChallenge] = useState<CodeChallenge | null>(null);
   const [flashColor, setFlashColor] = useState<string | null>(null);
+
+  // Update high score whenever active level changes
+  useEffect(() => {
+    setHighScore(getSavedHighScore());
+  }, [activeLevel.id, getSavedHighScore]);
 
   // Audio settings modal & state
   const [showAudioSettings, setShowAudioSettings] = useState(false);
@@ -145,9 +214,122 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
         } catch {
           // Ignore
         }
+        setProgression((prev) => {
+          const updated: CodeRunnerProgressionState = {
+            ...prev,
+            levelHighScores: {
+              ...prev.levelHighScores,
+              [activeLevel.id]: newScore,
+            },
+          };
+          saveProgression(selectedStudent?.id || 'default', updated);
+          return updated;
+        });
       }
     },
-    [highScore, highScoreKey]
+    [highScore, highScoreKey, activeLevel.id, selectedStudent?.id]
+  );
+
+  const handleSelectLevel = useCallback(
+    (levelId: string) => {
+      const targetLvl = codeRunnerLevels.find((l) => l.id === levelId);
+      if (!targetLvl) return;
+
+      setProgression((prev) => {
+        const updated: CodeRunnerProgressionState = {
+          ...prev,
+          currentLevelId: levelId,
+        };
+        saveProgression(selectedStudent?.id || 'default', updated);
+        return updated;
+      });
+
+      // Reset runtime states for new level
+      const s = stateRef.current;
+      s.gameState = 'start';
+      setGameState('start');
+      setQuestionsSolved(0);
+      setScore(0);
+      setCombo(1);
+      s.solvedCount = 0;
+      s.scoreVal = 0;
+      s.comboVal = 1;
+      s.activeGate = null;
+      s.challengesQueue = [];
+      soundCtrl.startMenuAmbience();
+    },
+    [selectedStudent?.id]
+  );
+
+  const handleLevelComplete = useCallback(
+    (
+      levelId: string,
+      earnedXP: number,
+      stats?: { gatesCleared: number; score: number; streak: number }
+    ) => {
+      const nextLvl = getNextLevel(levelId);
+
+      setProgression((prev) => {
+        const alreadyCompleted = prev.completedLevelIds.includes(levelId);
+        const newCompleted = alreadyCompleted
+          ? prev.completedLevelIds
+          : [...prev.completedLevelIds, levelId];
+        const newUnlocked =
+          nextLvl && !prev.unlockedLevelIds.includes(nextLvl.id)
+            ? [...prev.unlockedLevelIds, nextLvl.id]
+            : prev.unlockedLevelIds;
+
+        const updated: CodeRunnerProgressionState = {
+          ...prev,
+          completedLevelIds: newCompleted,
+          unlockedLevelIds: newUnlocked,
+          levelPassedAt: {
+            ...prev.levelPassedAt,
+            [levelId]: new Date().toISOString(),
+          },
+        };
+        saveProgression(selectedStudent?.id || 'default', updated);
+        return updated;
+      });
+
+      if (submitCodeRunnerLevel) {
+        submitCodeRunnerLevel(levelId, earnedXP);
+      }
+
+      soundCtrl.playComboMilestone();
+      setCompletionEarnedXP(earnedXP);
+      if (stats) {
+        setCompletionStats(stats);
+      } else {
+        setCompletionStats({
+          gatesCleared: stateRef.current.solvedCount || 4,
+          score: stateRef.current.scoreVal || 500,
+          streak: stateRef.current.highestComboVal || 1,
+        });
+      }
+      setShowCompletionModal(true);
+    },
+    [selectedStudent?.id, submitCodeRunnerLevel]
+  );
+
+  const getLevelChallenges = useCallback(
+    (count = 25): CodeChallenge[] => {
+      const pool = [...activeLevel.challenges];
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+
+      const queue: CodeChallenge[] = [];
+      while (queue.length < count) {
+        for (const item of pool) {
+          queue.push(item);
+          if (queue.length >= count) break;
+        }
+      }
+      return queue;
+    },
+    [activeLevel]
   );
 
   // Steer left or right
@@ -170,19 +352,23 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
   }, []);
 
   // Spawn next challenge gate (placed comfortably at 1500 distance)
-  const spawnChallengeGate = useCallback((zDistance = 1500) => {
-    const s = stateRef.current;
-    if (s.challengesQueue.length === 0) {
-      s.challengesQueue = getRandomChallenges(25);
-    }
-    const challenge = s.challengesQueue.shift() || codeChallenges[0];
-    s.activeGate = {
-      z: zDistance,
-      challenge,
-      passed: false,
-    };
-    setActiveChallenge(challenge);
-  }, []);
+  const spawnChallengeGate = useCallback(
+    (zDistance = 1500) => {
+      const s = stateRef.current;
+      if (s.challengesQueue.length === 0) {
+        s.challengesQueue = getLevelChallenges(25);
+      }
+      const challenge =
+        s.challengesQueue.shift() || activeLevel.challenges[0] || codeChallenges[0];
+      s.activeGate = {
+        z: zDistance,
+        challenge,
+        passed: false,
+      };
+      setActiveChallenge(challenge);
+    },
+    [getLevelChallenges, activeLevel]
+  );
 
   // Start actual game run
   const startGame = useCallback(() => {
@@ -204,7 +390,7 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
     s.screenShake = 0;
     s.particles = [];
     s.floatingTexts = [];
-    s.challengesQueue = getRandomChallenges(25);
+    s.challengesQueue = getLevelChallenges(25);
 
     setScore(0);
     setDistance(0);
@@ -489,6 +675,20 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
               setHighestCombo(s.highestComboVal);
               setQuestionsSolved(s.solvedCount);
               updateHighScore(s.scoreVal);
+
+              // Check if runner milestone reached for this level (5 gates solved)
+              if (s.solvedCount >= 5 && !progression.completedLevelIds.includes(activeLevel.id)) {
+                setTimeout(() => {
+                  if (stateRef.current.gameState === 'playing') {
+                    pauseGame();
+                    handleLevelComplete(activeLevel.id, activeLevel.xpReward, {
+                      gatesCleared: s.solvedCount,
+                      score: s.scoreVal,
+                      streak: s.highestComboVal,
+                    });
+                  }
+                }, 350);
+              }
             } else {
               // Wrong choice: lose heart, pause for Syntax Checkpoint learning
               s.livesVal -= 1;
@@ -927,24 +1127,99 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
       className="relative flex flex-col w-full h-[620px] max-w-5xl mx-auto rounded-xl border border-line bg-obsidian overflow-hidden select-none shadow-2xl"
     >
       {/* Top Game Navigation & Status Header */}
-      <div className="absolute top-0 inset-x-0 z-30 flex items-center justify-between px-4 py-3 bg-graphite/85 backdrop-blur-md border-b border-line">
-        <button
-          onClick={() => {
-            soundCtrl.playButtonClick();
-            onExit();
-          }}
-          className="flex items-center gap-1.5 text-xs text-muted hover:text-ivory transition-colors px-2.5 py-1.5 rounded-md hover:bg-elevated"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Exit Arena</span>
-        </button>
+      <div className="absolute top-0 inset-x-0 z-30 flex items-center justify-between px-3 sm:px-4 py-2.5 bg-graphite/90 backdrop-blur-md border-b border-line gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button
+            onClick={() => {
+              soundCtrl.playButtonClick();
+              onExit();
+            }}
+            className="flex items-center gap-1.5 text-xs text-muted hover:text-ivory transition-colors px-2 py-1.5 rounded-md hover:bg-elevated"
+            title="Exit to Games Hub"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden md:inline">Exit</span>
+          </button>
+
+          {/* Level Selector Roadmap Trigger Button */}
+          <button
+            onClick={() => {
+              soundCtrl.playButtonClick();
+              if (gameState === 'playing') pauseGame();
+              setShowLevelSelector(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gold-400/40 bg-gold-400/10 hover:bg-gold-400/20 text-xs font-mono text-ivory transition-colors shadow-sm"
+            title="Select Level / Open Roadmap"
+          >
+            <Layers className="h-3.5 w-3.5 text-gold-400" />
+            <span className="font-bold text-gold-400">L0{activeLevel.order}</span>
+            <span className="hidden sm:inline text-muted">·</span>
+            <span className="hidden sm:inline font-medium text-ivory">{activeLevel.topic}</span>
+            {isCurrentCompleted && (
+              <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+            )}
+          </button>
+
+          {/* Quick Prev / Next Level Buttons */}
+          <div className="hidden sm:flex items-center gap-0.5 rounded border border-line bg-elevated/60 p-0.5 text-xs">
+            <button
+              onClick={() => prevLevel && handleSelectLevel(prevLevel.id)}
+              disabled={!prevLevel || !isPrevLevelUnlocked}
+              className={`p-1 rounded transition-colors ${
+                prevLevel && isPrevLevelUnlocked
+                  ? 'text-muted hover:text-ivory hover:bg-graphite'
+                  : 'text-muted/30 cursor-not-allowed'
+              }`}
+              title={
+                prevLevel
+                  ? `Go to Level ${prevLevel.order}: ${prevLevel.title}`
+                  : 'No previous level'
+              }
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => nextLevel && handleSelectLevel(nextLevel.id)}
+              disabled={!nextLevel || !isNextLevelUnlocked}
+              className={`p-1 rounded transition-colors ${
+                nextLevel && isNextLevelUnlocked
+                  ? 'text-muted hover:text-ivory hover:bg-graphite'
+                  : 'text-muted/30 cursor-not-allowed'
+              }`}
+              title={
+                nextLevel
+                  ? isNextLevelUnlocked
+                    ? `Go to Level ${nextLevel.order}: ${nextLevel.title}`
+                    : `Level ${nextLevel.order} is locked`
+                  : 'Final Level'
+              }
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* DSA Code Lab Trigger Button */}
+          <button
+            onClick={() => {
+              soundCtrl.playButtonClick();
+              if (gameState === 'playing') pauseGame();
+              setShowCodeLab(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-line bg-elevated hover:border-gold-400/40 text-xs font-mono text-ivory transition-colors"
+            title="Open DSA Code Lab & Test Runner"
+          >
+            <Code2 className="h-3.5 w-3.5 text-gold-400" />
+            <span className="hidden md:inline">DSA Lab</span>
+            <span className="text-[10px] text-gold-400 font-bold">+{activeLevel.xpReward} XP</span>
+          </button>
+        </div>
 
         {/* Current In-Run Challenge Banner */}
         {gameState === 'playing' && activeChallenge && (
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-md border border-gold-400/30 bg-gold-400/10 text-xs">
-            <span className="font-mono text-gold-400 font-bold">{activeChallenge.language}</span>
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-md border border-gold-400/30 bg-gold-400/10 text-xs max-w-sm truncate">
+            <span className="font-mono text-gold-400 font-bold shrink-0">{activeChallenge.language}</span>
             <span className="text-line">|</span>
-            <span className="font-mono text-ivory tracking-tight">
+            <span className="font-mono text-ivory tracking-tight truncate">
               {activeChallenge.promptBefore}
               <span className="text-gold-400 font-bold underline px-0.5">{activeChallenge.blank}</span>
               {activeChallenge.promptAfter}
@@ -953,7 +1228,7 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
         )}
 
         {/* Top Right Controls: Pause & Audio Settings */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {gameState === 'playing' && (
             <button
               onClick={pauseGame}
@@ -1007,7 +1282,7 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
             <div className="flex items-center gap-2 text-xs text-muted font-mono">
               <span>{distance} m</span>
               <span>·</span>
-              <span className="text-ivory">{questionsSolved} solved</span>
+              <span className="text-gold-400 font-semibold">{questionsSolved}/5 Gates</span>
             </div>
           </div>
 
@@ -1069,69 +1344,96 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
 
       {/* Start Screen Overlay */}
       {gameState === 'start' && (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-obsidian/85 backdrop-blur-md text-center">
-          <div className="flex items-center justify-center h-16 w-16 rounded-2xl border border-gold-400/30 bg-gold-400/10 text-gold-400 mb-4 shadow-[0_0_24px_rgba(208,180,119,0.25)]">
-            <Zap className="h-8 w-8" />
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-obsidian/90 backdrop-blur-md text-center animate-fade-in overflow-y-auto">
+          {/* Active Level Header Badge */}
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gold-400/30 bg-gold-400/10 text-xs font-mono mb-3">
+            <span className="font-bold text-gold-400">LEVEL 0{activeLevel.order}</span>
+            <span className="text-line">·</span>
+            <span className="text-ivory font-medium">{activeLevel.topic}</span>
+            {isCurrentCompleted && (
+              <span className="flex items-center gap-1 text-emerald-400 font-semibold pl-1">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Cleared</span>
+              </span>
+            )}
           </div>
 
-          <h2 className="font-display text-3xl sm:text-4xl font-bold text-ivory tracking-tight">CODE RUNNER 3D</h2>
-          <p className="text-sm text-gold-400/90 font-medium mt-1">High-Speed Cyber Syntax Arena</p>
-
-          <p className="max-w-md text-xs sm:text-sm text-muted mt-3 leading-relaxed">
-            Run down the 3-lane neon highway. Approaching gates display programming tokens from C++, Python, JavaScript, and
-            Logic. Steer into the lane with the correct syntax to build multiplier streaks!
+          <h2 className="font-display text-2xl sm:text-4xl font-bold text-ivory tracking-tight">
+            {activeLevel.title}
+          </h2>
+          <p className="max-w-lg text-xs sm:text-sm text-muted mt-2 leading-relaxed">
+            {activeLevel.description}
           </p>
 
+          {/* Level Info Banner */}
+          <div className="flex items-center justify-center gap-3 mt-4 text-xs font-mono">
+            <div className="flex items-center gap-1 text-gold-400 px-3 py-1 rounded-md border border-gold-400/30 bg-gold-400/10">
+              <Zap className="h-3.5 w-3.5 fill-gold-400" />
+              <span>+{activeLevel.xpReward} XP Reward</span>
+            </div>
+            {highScore > 0 && (
+              <div className="flex items-center gap-1 text-muted px-3 py-1 rounded-md border border-line bg-graphite">
+                <Trophy className="h-3.5 w-3.5 text-gold-400" />
+                <span>Personal Best: {highScore.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+
           {/* Key Controls Guide */}
-          <div className="flex flex-wrap items-center justify-center gap-3 mt-5 text-xs text-muted font-mono">
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-line bg-graphite">
-              <span className="px-1.5 py-0.5 rounded bg-elevated text-ivory font-bold">←</span>
-              <span className="px-1.5 py-0.5 rounded bg-elevated text-ivory font-bold">→</span>
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mt-5 text-[11px] sm:text-xs text-muted font-mono">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-line bg-graphite">
+              <span className="px-1 py-0.5 rounded bg-elevated text-ivory font-bold">←</span>
+              <span className="px-1 py-0.5 rounded bg-elevated text-ivory font-bold">→</span>
               <span>or</span>
-              <span className="px-1.5 py-0.5 rounded bg-elevated text-ivory font-bold">A</span>
-              <span className="px-1.5 py-0.5 rounded bg-elevated text-ivory font-bold">D</span>
-              <span className="text-muted ml-1">Steer Lanes</span>
+              <span className="px-1 py-0.5 rounded bg-elevated text-ivory font-bold">A</span>
+              <span className="px-1 py-0.5 rounded bg-elevated text-ivory font-bold">D</span>
+              <span className="text-muted ml-1">Steer</span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-line bg-graphite">
-              <span className="px-1.5 py-0.5 rounded bg-elevated text-ivory font-bold">P</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-line bg-graphite">
+              <span className="px-1 py-0.5 rounded bg-elevated text-ivory font-bold">P</span>
               <span>/</span>
-              <span className="px-1.5 py-0.5 rounded bg-elevated text-ivory font-bold">ESC</span>
+              <span className="px-1 py-0.5 rounded bg-elevated text-ivory font-bold">ESC</span>
               <span className="text-muted ml-1">Pause</span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-line bg-graphite">
-              <span className="px-1.5 py-0.5 rounded bg-elevated text-ivory font-bold">SPACE</span>
-              <span className="text-muted ml-1">Start / Restart</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-line bg-graphite">
+              <span className="px-1 py-0.5 rounded bg-elevated text-ivory font-bold">SPACE</span>
+              <span className="text-muted ml-1">Run</span>
             </div>
           </div>
 
-          {highScore > 0 && (
-            <div className="flex items-center gap-1.5 mt-4 text-xs text-gold-400/80 font-mono">
-              <Trophy className="h-3.5 w-3.5 text-gold-400" />
-              <span>Personal Best: {highScore.toLocaleString()} pts</span>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3 mt-6">
+          {/* Primary Action Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
             <button
               onClick={startGame}
-              className="btn btn-primary px-8 py-3 text-base flex items-center gap-2 shadow-[0_0_20px_rgba(208,180,119,0.3)] hover:scale-105 transition-transform"
+              className="btn btn-primary px-7 py-3 text-sm flex items-center gap-2 shadow-[0_0_20px_rgba(208,180,119,0.3)] hover:scale-105 transition-transform"
             >
-              <Play className="h-5 w-5 fill-obsidian" />
+              <Play className="h-4 w-4 fill-obsidian" />
               <span>START RUN</span>
             </button>
 
             <button
               onClick={() => {
                 soundCtrl.playButtonClick();
-                setShowAudioSettings(true);
+                setShowCodeLab(true);
               }}
-              className="btn btn-secondary px-4 py-3 flex items-center gap-2"
-              title="Audio Settings"
+              className="btn btn-secondary px-5 py-3 text-sm flex items-center gap-2 hover:border-gold-400/50"
             >
-              <Sliders className="h-4 w-4" />
-              <span className="hidden sm:inline">Audio</span>
+              <Code2 className="h-4 w-4 text-gold-400" />
+              <span>DSA CODE LAB</span>
+            </button>
+
+            <button
+              onClick={() => {
+                soundCtrl.playButtonClick();
+                setShowLevelSelector(true);
+              }}
+              className="btn btn-secondary px-5 py-3 text-sm flex items-center gap-2"
+              title="View All Levels"
+            >
+              <Layers className="h-4 w-4 text-gold-400" />
+              <span>LEVEL ROADMAP</span>
             </button>
           </div>
         </div>
@@ -1154,6 +1456,28 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
             >
               <Play className="h-4 w-4 fill-obsidian" />
               <span>Resume Run</span>
+            </button>
+
+            <button
+              onClick={() => {
+                soundCtrl.playButtonClick();
+                setShowCodeLab(true);
+              }}
+              className="btn btn-secondary py-2.5 flex items-center justify-center gap-2 text-ivory border-gold-400/30"
+            >
+              <Code2 className="h-4 w-4 text-gold-400" />
+              <span>Open DSA Code Lab</span>
+            </button>
+
+            <button
+              onClick={() => {
+                soundCtrl.playButtonClick();
+                setShowLevelSelector(true);
+              }}
+              className="btn btn-secondary py-2.5 flex items-center justify-center gap-2"
+            >
+              <Layers className="h-4 w-4 text-gold-400" />
+              <span>Select Level / Roadmap</span>
             </button>
 
             <button
@@ -1284,20 +1608,43 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
           )}
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-3 mt-7">
+          <div className="flex flex-wrap items-center justify-center gap-2.5 mt-7">
             <button
               onClick={restartGame}
-              className="btn btn-primary px-6 py-2.5 flex items-center gap-2 shadow-[0_0_15px_rgba(208,180,119,0.25)]"
+              className="btn btn-primary px-5 py-2.5 flex items-center gap-1.5 shadow-[0_0_15px_rgba(208,180,119,0.25)] text-xs"
             >
               <RotateCcw className="h-4 w-4" />
               <span>Play Again</span>
             </button>
+
+            <button
+              onClick={() => {
+                soundCtrl.playButtonClick();
+                setShowCodeLab(true);
+              }}
+              className="btn btn-secondary px-5 py-2.5 flex items-center gap-1.5 text-xs text-ivory border-gold-400/30"
+            >
+              <Code2 className="h-4 w-4 text-gold-400" />
+              <span>DSA Code Lab</span>
+            </button>
+
+            <button
+              onClick={() => {
+                soundCtrl.playButtonClick();
+                setShowLevelSelector(true);
+              }}
+              className="btn btn-secondary px-5 py-2.5 flex items-center gap-1.5 text-xs"
+            >
+              <Layers className="h-4 w-4 text-gold-400" />
+              <span>Select Level</span>
+            </button>
+
             <button
               onClick={() => {
                 soundCtrl.playButtonClick();
                 onExit();
               }}
-              className="btn btn-secondary px-6 py-2.5"
+              className="btn btn-secondary px-5 py-2.5 text-xs text-muted hover:text-ivory"
             >
               <span>Exit to Hub</span>
             </button>
@@ -1407,6 +1754,54 @@ export function CodeRunnerGame({ onExit, username: propUsername, avatarUrl: prop
           </div>
         </div>
       )}
+
+      {/* Level Selector Roadmap Modal */}
+      <LevelSelector
+        isOpen={showLevelSelector}
+        onClose={() => setShowLevelSelector(false)}
+        currentLevelId={activeLevel.id}
+        unlockedLevelIds={progression.unlockedLevelIds}
+        completedLevelIds={progression.completedLevelIds}
+        onSelectLevel={handleSelectLevel}
+        levelHighScores={progression.levelHighScores}
+      />
+
+      {/* DSA Code Lab & Interactive Test Suite Modal */}
+      <DsaCodeLabModal
+        isOpen={showCodeLab}
+        onClose={() => setShowCodeLab(false)}
+        level={activeLevel}
+        onCompleteLevel={handleLevelComplete}
+        isAlreadyCompleted={progression.completedLevelIds.includes(activeLevel.id)}
+      />
+
+      {/* Celebratory Level Clear Modal */}
+      <LevelCompletionModal
+        isOpen={showCompletionModal}
+        onClose={() => setShowCompletionModal(false)}
+        level={activeLevel}
+        earnedXP={completionEarnedXP || activeLevel.xpReward}
+        hasNextLevel={Boolean(nextLevel && nextLevel.id)}
+        nextLevelTitle={nextLevel?.title}
+        onProceedNextLevel={() => {
+          if (nextLevel) {
+            handleSelectLevel(nextLevel.id);
+          }
+        }}
+        onReplayLevel={() => {
+          restartGame();
+        }}
+        onOpenLevelSelector={() => {
+          setShowLevelSelector(true);
+        }}
+        stats={
+          completionStats || {
+            gatesCleared: questionsSolved,
+            score: score,
+            streak: highestCombo,
+          }
+        }
+      />
     </div>
   );
 }

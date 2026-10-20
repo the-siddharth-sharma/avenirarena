@@ -75,6 +75,7 @@ interface StudentProfileContextValue {
   questCompletions: QuestCompletion[];
   submitDailyQuiz: (quizId: string, questions: QuizQuestion[], answers: number[]) => QuizSubmissionResult;
   submitGame: (gameId: LearningGameId, answer: number) => GameSubmissionResult;
+  submitCodeRunnerLevel?: (levelId: string, xp: number) => boolean;
   updateUserXP: (delta: number) => Promise<void>;
 }
 
