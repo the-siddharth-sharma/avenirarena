@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { db, auth } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
+import { getVerifiedAuthUid } from '@/utils/authHelper';
 import {
   collection,
   doc,
@@ -16,6 +17,8 @@ import {
   query,
   orderBy,
   runTransaction,
+  setDoc,
+  deleteDoc,
   limit,
 } from 'firebase/firestore';
 
@@ -120,8 +123,8 @@ function CommentItem({
   }, [postId, comment.id, currentUser?.uid]);
 
   const handleToggleLike = async () => {
-    const authUid = auth.currentUser?.uid || currentUser?.uid;
-    if (!currentUser || !authUid) {
+    const verifiedUid = await getVerifiedAuthUid();
+    if (!currentUser || !verifiedUid) {
       openAuthModal();
       return;
     }
@@ -155,36 +158,45 @@ function CommentItem({
         'comments',
         comment.id,
         'likes',
-        authUid
+        verifiedUid
       );
 
-      await runTransaction(db, async (tx) => {
-        const likeSnap = await tx.get(likeRef);
-        const commentSnap = await tx.get(commentRef);
+      if (nextLiked) {
+        // 1. Primary write: persist user like document
+        await setDoc(likeRef, {
+          uid: verifiedUid,
+          createdAt: Date.now(),
+        });
 
-        if (!commentSnap.exists()) {
-          throw new Error('Comment does not exist.');
+        // 2. Secondary non-blocking write: update comment likeCount aggregate
+        try {
+          await runTransaction(db, async (tx) => {
+            const commentSnap = await tx.get(commentRef);
+            if (commentSnap.exists()) {
+              const currentLikes = Number(commentSnap.data().likeCount ?? 0);
+              tx.update(commentRef, { likeCount: currentLikes + 1 });
+            }
+          });
+        } catch (cntErr) {
+          console.warn('[AVENIR ARENA] Comment likeCount aggregate update notice:', cntErr);
         }
+      } else {
+        // 1. Primary write: delete user like document
+        await deleteDoc(likeRef);
 
-        const currentLikes = Number(commentSnap.data().likeCount ?? 0);
-
-        if (likeSnap.exists()) {
-          // Unlike: delete deterministic reaction document and decrement aggregate count
-          tx.delete(likeRef);
-          tx.update(commentRef, {
-            likeCount: Math.max(0, currentLikes - 1),
+        // 2. Secondary non-blocking write: decrement comment likeCount aggregate
+        try {
+          await runTransaction(db, async (tx) => {
+            const commentSnap = await tx.get(commentRef);
+            if (commentSnap.exists()) {
+              const currentLikes = Number(commentSnap.data().likeCount ?? 1);
+              tx.update(commentRef, { likeCount: Math.max(0, currentLikes - 1) });
+            }
           });
-        } else {
-          // Like: create deterministic reaction document and increment aggregate count
-          tx.set(likeRef, {
-            uid: authUid,
-            createdAt: Date.now(),
-          });
-          tx.update(commentRef, {
-            likeCount: currentLikes + 1,
-          });
+        } catch (cntErr) {
+          console.warn('[AVENIR ARENA] Comment likeCount aggregate decrement notice:', cntErr);
         }
-      });
+      }
     } catch (err: unknown) {
       console.error('[AVENIR ARENA] Comment like write failed, reverting:', err);
       // Revert optimistic update on failure and present clear feedback
@@ -372,8 +384,8 @@ export function PostCommentSection({
     if (e) e.preventDefault();
     setSubmitError(null);
 
-    const authUid = auth.currentUser?.uid || currentUser?.uid;
-    if (!currentUser || !authUid) {
+    const verifiedUid = await getVerifiedAuthUid();
+    if (!currentUser || !verifiedUid) {
       openAuthModal();
       return;
     }
@@ -401,7 +413,7 @@ export function PostCommentSection({
 
     const commentPayload = {
       postId,
-      senderUid: authUid,
+      senderUid: verifiedUid,
       authorName: authorFullName,
       username: userProfile?.username || 'cadet',
       avatarUrl: userProfile?.avatarUrl || currentUser.photoURL || '',
@@ -416,23 +428,26 @@ export function PostCommentSection({
       const commentDocRef = doc(collection(db, 'community_messages', postId, 'comments'));
       const postRef = doc(db, 'community_messages', postId);
 
-      // Atomically write comment document AND increment post commentCount
-      await runTransaction(db, async (tx) => {
-        const postSnap = await tx.get(postRef);
-        if (!postSnap.exists()) {
-          throw new Error('Transmission no longer exists in Arena Comms.');
-        }
+      // 1. Primary write: persist comment in post subcollection
+      await setDoc(commentDocRef, commentPayload);
 
-        const currentCount = Number(postSnap.data().commentCount ?? 0);
-
-        tx.set(commentDocRef, commentPayload);
-        tx.update(postRef, {
-          commentCount: currentCount + 1,
-        });
-      });
-
-      // Clear input only after successful database write
+      // 2. Clear input only after confirmed successful database write
       setNewCommentText('');
+
+      // 3. Secondary non-blocking write: update post commentCount aggregate
+      try {
+        await runTransaction(db, async (tx) => {
+          const postSnap = await tx.get(postRef);
+          if (postSnap.exists()) {
+            const currentCount = Number(postSnap.data().commentCount ?? 0);
+            tx.update(postRef, {
+              commentCount: currentCount + 1,
+            });
+          }
+        });
+      } catch (countErr) {
+        console.warn('[AVENIR ARENA] Non-critical post commentCount aggregate update notice:', countErr);
+      }
     } catch (err: unknown) {
       console.error('[AVENIR ARENA] Failed to post comment:', err);
       const errMsg = err instanceof Error ? err.message : 'Failed to publish comment.';
@@ -455,21 +470,30 @@ export function PostCommentSection({
 
   // 3. Handle delete comment (Author or Admin)
   const handleDeleteComment = async (commentId: string) => {
-    if (!currentUser) return;
+    const verifiedUid = await getVerifiedAuthUid();
+    if (!verifiedUid) return;
+
     try {
       const commentRef = doc(db, 'community_messages', postId, 'comments', commentId);
       const postRef = doc(db, 'community_messages', postId);
 
-      await runTransaction(db, async (tx) => {
-        const postSnap = await tx.get(postRef);
-        tx.delete(commentRef);
-        if (postSnap.exists()) {
-          const currentCount = Number(postSnap.data().commentCount ?? 1);
-          tx.update(postRef, {
-            commentCount: Math.max(0, currentCount - 1),
-          });
-        }
-      });
+      // 1. Delete comment document
+      await deleteDoc(commentRef);
+
+      // 2. Secondary non-blocking parent count decrement
+      try {
+        await runTransaction(db, async (tx) => {
+          const postSnap = await tx.get(postRef);
+          if (postSnap.exists()) {
+            const currentCount = Number(postSnap.data().commentCount ?? 1);
+            tx.update(postRef, {
+              commentCount: Math.max(0, currentCount - 1),
+            });
+          }
+        });
+      } catch (countErr) {
+        console.warn('[AVENIR ARENA] Post comment count decrement notice:', countErr);
+      }
     } catch (err) {
       console.warn('[AVENIR ARENA] Delete comment failed:', err);
     }

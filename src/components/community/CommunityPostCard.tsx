@@ -13,7 +13,8 @@ import { Card } from '@/components/Card';
 import { PostCommentSection } from './PostCommentSection';
 import { db, auth } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
-import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { getVerifiedAuthUid } from '@/utils/authHelper';
+import { doc, onSnapshot, runTransaction, setDoc, deleteDoc } from 'firebase/firestore';
 import type { ChallengeInvite } from '@/pages/CommunityPage';
 
 export interface CommunityPostItem {
@@ -105,8 +106,8 @@ export function CommunityPostCard({
 
   // 2. Handle Like Toggle
   const handleToggleLike = async () => {
-    const authUid = auth.currentUser?.uid || currentUser?.uid;
-    if (!currentUser || !authUid) {
+    const verifiedUid = await getVerifiedAuthUid();
+    if (!currentUser || !verifiedUid) {
       openAuthModal();
       return;
     }
@@ -131,35 +132,48 @@ export function CommunityPostCard({
 
     try {
       const postRef = doc(db, 'community_messages', post.id);
-      const likeRef = doc(db, 'community_messages', post.id, 'likes', authUid);
+      const likeRef = doc(db, 'community_messages', post.id, 'likes', verifiedUid);
 
-      await runTransaction(db, async (tx) => {
-        const likeSnap = await tx.get(likeRef);
-        const postSnap = await tx.get(postRef);
+      if (nextLiked) {
+        // 1. Primary write: persist user like document
+        await setDoc(likeRef, {
+          uid: verifiedUid,
+          createdAt: Date.now(),
+        });
 
-        if (!postSnap.exists()) {
-          throw new Error('Transmission does not exist.');
+        // 2. Secondary non-blocking write: update parent post likeCount aggregate
+        try {
+          await runTransaction(db, async (tx) => {
+            const postSnap = await tx.get(postRef);
+            if (postSnap.exists()) {
+              const currentLikes = Number(postSnap.data().likeCount ?? 0);
+              tx.update(postRef, {
+                likeCount: currentLikes + 1,
+              });
+            }
+          });
+        } catch (cntErr) {
+          console.warn('[AVENIR ARENA] Post likeCount aggregate update notice:', cntErr);
         }
+      } else {
+        // 1. Primary write: delete user like document
+        await deleteDoc(likeRef);
 
-        const currentLikes = Number(postSnap.data().likeCount ?? 0);
-
-        if (likeSnap.exists()) {
-          // Unlike
-          tx.delete(likeRef);
-          tx.update(postRef, {
-            likeCount: Math.max(0, currentLikes - 1),
+        // 2. Secondary non-blocking write: decrement parent post likeCount aggregate
+        try {
+          await runTransaction(db, async (tx) => {
+            const postSnap = await tx.get(postRef);
+            if (postSnap.exists()) {
+              const currentLikes = Number(postSnap.data().likeCount ?? 1);
+              tx.update(postRef, {
+                likeCount: Math.max(0, currentLikes - 1),
+              });
+            }
           });
-        } else {
-          // Like
-          tx.set(likeRef, {
-            uid: authUid,
-            createdAt: Date.now(),
-          });
-          tx.update(postRef, {
-            likeCount: currentLikes + 1,
-          });
+        } catch (cntErr) {
+          console.warn('[AVENIR ARENA] Post likeCount aggregate decrement notice:', cntErr);
         }
-      });
+      }
     } catch (err) {
       console.warn('[AVENIR ARENA] Like toggle rollback:', err);
       // Rollback optimistic state

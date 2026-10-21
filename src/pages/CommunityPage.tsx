@@ -13,7 +13,8 @@ import { Card } from '@/components/Card';
 import { PageHeader } from '@/components/PageHeader';
 import { CommunityPostCard } from '@/components/community/CommunityPostCard';
 import { useAuth } from '@/context/AuthContext';
-import { db, auth } from '@/firebase';
+import { db } from '@/firebase';
+import { getVerifiedAuthUid } from '@/utils/authHelper';
 import {
   collection,
   doc,
@@ -406,8 +407,8 @@ export function CommunityPage({ navigate, initialPostId }: CommunityPageProps) {
     e.preventDefault();
     setSubmitError(null);
 
-    const authUid = auth.currentUser?.uid || currentUser?.uid;
-    if (!currentUser || !authUid) {
+    const verifiedUid = await getVerifiedAuthUid();
+    if (!currentUser || !verifiedUid) {
       setSubmitError('Authentication clearance required to broadcast transmissions.');
       return;
     }
@@ -426,7 +427,7 @@ export function CommunityPage({ navigate, initialPostId }: CommunityPageProps) {
     setIsSubmitting(true);
 
     const payload = {
-      senderUid: authUid,
+      senderUid: verifiedUid,
       authorName: activeAuthor.name,
       username: activeAuthor.username,
       avatarUrl: activeAuthor.avatarUrl,

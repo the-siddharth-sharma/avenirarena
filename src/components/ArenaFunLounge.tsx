@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sparkles, ChevronRight, Loader2, MessageCircleQuestion, AlertCircle } from 'lucide-react';
 import { db, auth } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
-import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { getVerifiedAuthUid } from '@/utils/authHelper';
+import { doc, onSnapshot, runTransaction, setDoc, deleteDoc } from 'firebase/firestore';
 import {
   FUN_LOUNGE_ITEMS,
   FUN_LOUNGE_REACTIONS,
@@ -189,8 +190,8 @@ export function ArenaFunLounge() {
 
   // 6. Concurrency-Safe Persistent Reaction Handler
   const handleToggleReaction = async (emoji: FunReactionEmoji) => {
-    const authUid = auth.currentUser?.uid || currentUser?.uid;
-    if (!currentUser || !authUid) {
+    const verifiedUid = await getVerifiedAuthUid();
+    if (!currentUser || !verifiedUid) {
       openAuthModal();
       return;
     }
@@ -228,52 +229,56 @@ export function ArenaFunLounge() {
         'quote_reactions',
         currentItem.id,
         'reactions',
-        authUid
+        verifiedUid
       );
 
-      await runTransaction(db, async (tx) => {
-        const quoteSnap = await tx.get(quoteDocRef);
-        const userSnap = await tx.get(userReactionRef);
+      // 1. Primary write: persist or remove deterministic user reaction document
+      if (isRemoving) {
+        await deleteDoc(userReactionRef);
+      } else {
+        await setDoc(userReactionRef, {
+          uid: verifiedUid,
+          reaction: emoji,
+          updatedAt: Date.now(),
+        });
+      }
 
-        const serverCounts =
-          (quoteSnap.exists()
-            ? (quoteSnap.data().counts as Record<string, number>)
-            : {}) || {};
-        const freshCounts: Record<string, number> = { ...serverCounts };
+      // 2. Secondary non-blocking write: update aggregate counts on quote doc
+      try {
+        await runTransaction(db, async (tx) => {
+          const quoteSnap = await tx.get(quoteDocRef);
+          const serverCounts =
+            (quoteSnap.exists()
+              ? (quoteSnap.data().counts as Record<string, number>)
+              : {}) || {};
+          const freshCounts: Record<string, number> = { ...serverCounts };
 
-        const existingReaction = userSnap.exists()
-          ? (userSnap.data().reaction as string)
-          : null;
-
-        if (isRemoving) {
-          tx.delete(userReactionRef);
-          if (existingReaction && freshCounts[existingReaction]) {
-            freshCounts[existingReaction] = Math.max(0, freshCounts[existingReaction] - 1);
-            if (freshCounts[existingReaction] === 0) delete freshCounts[existingReaction];
+          if (isRemoving) {
+            if (prevReaction && freshCounts[prevReaction]) {
+              freshCounts[prevReaction] = Math.max(0, freshCounts[prevReaction] - 1);
+              if (freshCounts[prevReaction] === 0) delete freshCounts[prevReaction];
+            }
+          } else {
+            if (prevReaction && freshCounts[prevReaction]) {
+              freshCounts[prevReaction] = Math.max(0, freshCounts[prevReaction] - 1);
+              if (freshCounts[prevReaction] === 0) delete freshCounts[prevReaction];
+            }
+            freshCounts[emoji] = (freshCounts[emoji] || 0) + 1;
           }
-        } else {
-          tx.set(userReactionRef, {
-            uid: authUid,
-            reaction: emoji,
-            updatedAt: Date.now(),
-          });
-          if (existingReaction && freshCounts[existingReaction]) {
-            freshCounts[existingReaction] = Math.max(0, freshCounts[existingReaction] - 1);
-            if (freshCounts[existingReaction] === 0) delete freshCounts[existingReaction];
-          }
-          freshCounts[emoji] = (freshCounts[emoji] || 0) + 1;
-        }
 
-        tx.set(
-          quoteDocRef,
-          {
-            quoteId: currentItem.id,
-            counts: freshCounts,
-            lastUpdated: Date.now(),
-          },
-          { merge: true }
-        );
-      });
+          tx.set(
+            quoteDocRef,
+            {
+              quoteId: currentItem.id,
+              counts: freshCounts,
+              lastUpdated: Date.now(),
+            },
+            { merge: true }
+          );
+        });
+      } catch (aggregateErr) {
+        console.warn('[ARENA FUN LOUNGE] Non-critical aggregate update notice:', aggregateErr);
+      }
     } catch (err) {
       console.warn('[ARENA FUN LOUNGE] Reaction write failed, reverting:', err);
       // Rollback optimistic state
