@@ -5,14 +5,13 @@ import {
   Loader2,
   Trash2,
   CornerDownRight,
+  AlertCircle,
 } from 'lucide-react';
-import { db } from '@/firebase';
+import { db, auth } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
 import {
   collection,
   doc,
-  addDoc,
-  deleteDoc,
   onSnapshot,
   query,
   orderBy,
@@ -64,19 +63,21 @@ interface CommentItemProps {
   onLikeChange?: (commentId: string, newLiked: boolean, newCount: number) => void;
 }
 
-function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: CommentItemProps) {
+function CommentItem({
+  comment,
+  postId,
+  onDelete,
+  canDelete,
+  onLikeChange,
+}: CommentItemProps) {
   const { currentUser, openAuthModal } = useAuth();
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(comment.likeCount || 0);
   const [isLiking, setIsLiking] = useState(false);
   const [likeError, setLikeError] = useState<string | null>(null);
 
-  // Ref guarding against in-flight race conditions & stale snapshot overrides
-  const isLikingRef = useRef(false);
-
-  // Sync likeCount whenever remote comment changes (unless local like operation is actively in-flight)
+  // Sync likeCount whenever remote comment changes
   useEffect(() => {
-    if (isLikingRef.current) return;
     if (typeof comment.likeCount === 'number') {
       setLikeCount(comment.likeCount);
     }
@@ -84,7 +85,8 @@ function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: Com
 
   // Dedicated, deterministic listener for current user's reaction document
   useEffect(() => {
-    if (!currentUser?.uid || postId.startsWith('local-') || comment.id.startsWith('local-')) {
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+    if (!authUid || postId.startsWith('local-') || comment.id.startsWith('local-')) {
       setIsLiked(false);
       return;
     }
@@ -97,15 +99,13 @@ function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: Com
       'comments',
       comment.id,
       'likes',
-      currentUser.uid
+      authUid
     );
 
     const unsub = onSnapshot(
       likeDocRef,
       (snap) => {
         if (!isMounted) return;
-        // Never allow a stale or transitional snapshot to clobber an active in-flight operation
-        if (isLikingRef.current) return;
         setIsLiked(snap.exists());
       },
       (err) => {
@@ -120,14 +120,14 @@ function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: Com
   }, [postId, comment.id, currentUser?.uid]);
 
   const handleToggleLike = async () => {
-    if (!currentUser) {
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+    if (!currentUser || !authUid) {
       openAuthModal();
       return;
     }
 
     // Prevent duplicate clicks or race conditions
-    if (isLiking || isLikingRef.current) return;
-    isLikingRef.current = true;
+    if (isLiking) return;
     setIsLiking(true);
     setLikeError(null);
 
@@ -142,7 +142,6 @@ function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: Com
     onLikeChange?.(comment.id, nextLiked, nextCount);
 
     if (postId.startsWith('local-') || comment.id.startsWith('local-')) {
-      isLikingRef.current = false;
       setIsLiking(false);
       return;
     }
@@ -156,49 +155,36 @@ function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: Com
         'comments',
         comment.id,
         'likes',
-        currentUser.uid
+        authUid
       );
 
-      // Timeout safety guard (8s) prevents UI from locking on degraded connections
-      const transactionPromise = runTransaction(db, async (tx) => {
+      await runTransaction(db, async (tx) => {
         const likeSnap = await tx.get(likeRef);
         const commentSnap = await tx.get(commentRef);
 
-        const currentLikes = commentSnap.exists()
-          ? Number(commentSnap.data().likeCount ?? 0)
-          : prevCount;
+        if (!commentSnap.exists()) {
+          throw new Error('Comment does not exist.');
+        }
+
+        const currentLikes = Number(commentSnap.data().likeCount ?? 0);
 
         if (likeSnap.exists()) {
           // Unlike: delete deterministic reaction document and decrement aggregate count
           tx.delete(likeRef);
-          if (commentSnap.exists()) {
-            tx.update(commentRef, {
-              likeCount: Math.max(0, currentLikes - 1),
-            });
-          } else {
-            tx.set(commentRef, { likeCount: Math.max(0, currentLikes - 1) }, { merge: true });
-          }
+          tx.update(commentRef, {
+            likeCount: Math.max(0, currentLikes - 1),
+          });
         } else {
           // Like: create deterministic reaction document and increment aggregate count
           tx.set(likeRef, {
-            uid: currentUser.uid,
+            uid: authUid,
             createdAt: Date.now(),
           });
-          if (commentSnap.exists()) {
-            tx.update(commentRef, {
-              likeCount: currentLikes + 1,
-            });
-          } else {
-            tx.set(commentRef, { likeCount: currentLikes + 1 }, { merge: true });
-          }
+          tx.update(commentRef, {
+            likeCount: currentLikes + 1,
+          });
         }
       });
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Reaction operation timed out')), 8000)
-      );
-
-      await Promise.race([transactionPromise, timeoutPromise]);
     } catch (err: unknown) {
       console.error('[AVENIR ARENA] Comment like write failed, reverting:', err);
       // Revert optimistic update on failure and present clear feedback
@@ -208,7 +194,6 @@ function CommentItem({ comment, postId, onDelete, canDelete, onLikeChange }: Com
       setLikeError('Failed to like. Retry.');
       setTimeout(() => setLikeError(null), 3000);
     } finally {
-      isLikingRef.current = false;
       setIsLiking(false);
     }
   };
@@ -318,8 +303,10 @@ export function PostCommentSection({
   const [sortBy, setSortBy] = useState<'top' | 'newest'>('top');
   const [visibleLimit, setVisibleLimit] = useState(10);
 
+  const isSubmittingRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const onCountChangeRef = useRef(onCommentCountChange);
+
   useEffect(() => {
     onCountChangeRef.current = onCommentCountChange;
   }, [onCommentCountChange]);
@@ -380,15 +367,18 @@ export function PostCommentSection({
     }
   }, [postId]);
 
-  // 2. Handle comment submission
-  const handleSubmitComment = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 2. Handle comment submission with atomic batch & duplicate prevention
+  const handleSubmitComment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setSubmitError(null);
 
-    if (!currentUser) {
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+    if (!currentUser || !authUid) {
       openAuthModal();
       return;
     }
+
+    if (isSubmitting || isSubmittingRef.current) return;
 
     const trimmed = newCommentText.trim();
     if (!trimmed) {
@@ -401,6 +391,7 @@ export function PostCommentSection({
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     const authorFullName =
@@ -410,7 +401,7 @@ export function PostCommentSection({
 
     const commentPayload = {
       postId,
-      senderUid: currentUser.uid,
+      senderUid: authUid,
       authorName: authorFullName,
       username: userProfile?.username || 'cadet',
       avatarUrl: userProfile?.avatarUrl || currentUser.photoURL || '',
@@ -422,26 +413,43 @@ export function PostCommentSection({
     };
 
     try {
-      // 1. Add comment to Firestore subcollection
-      const commentsCol = collection(db, 'community_messages', postId, 'comments');
-      await addDoc(commentsCol, commentPayload);
-
-      // 2. Atomically increment commentCount on post
+      const commentDocRef = doc(collection(db, 'community_messages', postId, 'comments'));
       const postRef = doc(db, 'community_messages', postId);
+
+      // Atomically write comment document AND increment post commentCount
       await runTransaction(db, async (tx) => {
         const postSnap = await tx.get(postRef);
-        if (postSnap.exists()) {
-          const currentCount = postSnap.data().commentCount || 0;
-          tx.update(postRef, { commentCount: currentCount + 1 });
+        if (!postSnap.exists()) {
+          throw new Error('Transmission no longer exists in Arena Comms.');
         }
+
+        const currentCount = Number(postSnap.data().commentCount ?? 0);
+
+        tx.set(commentDocRef, commentPayload);
+        tx.update(postRef, {
+          commentCount: currentCount + 1,
+        });
       });
 
+      // Clear input only after successful database write
       setNewCommentText('');
     } catch (err: unknown) {
       console.error('[AVENIR ARENA] Failed to post comment:', err);
-      setSubmitError('Failed to publish comment. Please retry.');
+      const errMsg = err instanceof Error ? err.message : 'Failed to publish comment.';
+      setSubmitError(`${errMsg} Please retry.`);
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
+    }
+  };
+
+  // Keyboard submission handler: Enter submits, Shift+Enter adds newline
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!isSubmitting && newCommentText.trim()) {
+        handleSubmitComment();
+      }
     }
   };
 
@@ -450,14 +458,16 @@ export function PostCommentSection({
     if (!currentUser) return;
     try {
       const commentRef = doc(db, 'community_messages', postId, 'comments', commentId);
-      await deleteDoc(commentRef);
-
       const postRef = doc(db, 'community_messages', postId);
+
       await runTransaction(db, async (tx) => {
         const postSnap = await tx.get(postRef);
+        tx.delete(commentRef);
         if (postSnap.exists()) {
-          const currentCount = postSnap.data().commentCount || 1;
-          tx.update(postRef, { commentCount: Math.max(0, currentCount - 1) });
+          const currentCount = Number(postSnap.data().commentCount ?? 1);
+          tx.update(postRef, {
+            commentCount: Math.max(0, currentCount - 1),
+          });
         }
       });
     } catch (err) {
@@ -535,9 +545,10 @@ export function PostCommentSection({
             ref={inputRef}
             value={newCommentText}
             onChange={(e) => setNewCommentText(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder={
               currentUser
-                ? `Write a comment as @${userProfile?.username || 'cadet'}...`
+                ? `Write a comment as @${userProfile?.username || 'cadet'}... (Enter to post)`
                 : 'Sign in to join this peer discussion...'
             }
             rows={2}
@@ -547,7 +558,11 @@ export function PostCommentSection({
           <div className="flex items-center justify-between mt-1 text-[10px] font-mono text-muted/70 px-1">
             <span>
               {newCommentText.length > 400 && (
-                <span className={newCommentText.length >= 500 ? 'text-red-400 font-bold' : 'text-gold-400'}>
+                <span
+                  className={
+                    newCommentText.length >= 500 ? 'text-red-400 font-bold' : 'text-gold-400'
+                  }
+                >
                   {500 - newCommentText.length} chars remaining
                 </span>
               )}
@@ -575,9 +590,10 @@ export function PostCommentSection({
         </div>
 
         {submitError && (
-          <p className="text-[11px] font-mono text-red-400 animate-fade-in">
-            {submitError}
-          </p>
+          <div className="p-2 rounded-lg border border-red-500/40 bg-red-950/40 text-red-200 text-xs flex items-center gap-2 animate-fade-in">
+            <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            <span className="font-mono text-[11px]">{submitError}</span>
+          </div>
         )}
       </form>
 
@@ -614,7 +630,7 @@ export function PostCommentSection({
             <button
               type="button"
               onClick={() => setVisibleLimit((prev) => prev + 10)}
-              className="w-full py-1.5 text-center text-[11px] font-mono text-gold-400 hover:text-gold-300 bg-obsidian/40 border border-line rounded-lg transition-colors"
+              className="w-full py-1.5 text-center text-[11px] font-mono text-gold-400 hover:text-gold-300 bg-obsidian/40 border border-line rounded-lg transition-colors cursor-pointer"
             >
               Load more comments ({comments.length - visibleLimit} remaining)
             </button>

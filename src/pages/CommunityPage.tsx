@@ -13,7 +13,7 @@ import { Card } from '@/components/Card';
 import { PageHeader } from '@/components/PageHeader';
 import { CommunityPostCard } from '@/components/community/CommunityPostCard';
 import { useAuth } from '@/context/AuthContext';
-import { db } from '@/firebase';
+import { db, auth } from '@/firebase';
 import {
   collection,
   doc,
@@ -406,7 +406,8 @@ export function CommunityPage({ navigate, initialPostId }: CommunityPageProps) {
     e.preventDefault();
     setSubmitError(null);
 
-    if (!currentUser) {
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+    if (!currentUser || !authUid) {
       setSubmitError('Authentication clearance required to broadcast transmissions.');
       return;
     }
@@ -425,7 +426,7 @@ export function CommunityPage({ navigate, initialPostId }: CommunityPageProps) {
     setIsSubmitting(true);
 
     const payload = {
-      senderUid: currentUser.uid,
+      senderUid: authUid,
       authorName: activeAuthor.name,
       username: activeAuthor.username,
       avatarUrl: activeAuthor.avatarUrl,

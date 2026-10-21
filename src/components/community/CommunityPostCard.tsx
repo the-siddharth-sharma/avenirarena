@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/Card';
 import { PostCommentSection } from './PostCommentSection';
-import { db } from '@/firebase';
+import { db, auth } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
 import type { ChallengeInvite } from '@/pages/CommunityPage';
@@ -56,15 +56,16 @@ export function CommunityPostCard({
 
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Sync likeCount and commentCount from post prop if updated
+  // Sync likeCount and commentCount from post prop if updated (unless like in-flight)
   useEffect(() => {
+    if (isLiking) return;
     if (typeof post.likeCount === 'number') {
       setLikeCount(post.likeCount);
     }
     if (typeof post.commentCount === 'number') {
       setCommentCount(post.commentCount);
     }
-  }, [post.likeCount, post.commentCount]);
+  }, [post.likeCount, post.commentCount, isLiking]);
 
   // Deep-link scroll & highlight
   useEffect(() => {
@@ -76,14 +77,15 @@ export function CommunityPostCard({
 
   // 1. Subscribe to active user's like status on this post in Firestore
   useEffect(() => {
-    if (!currentUser || post.id.startsWith('local-')) {
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+    if (!authUid || post.id.startsWith('local-')) {
       setIsLikedByMe(false);
       return;
     }
 
     let isMounted = true;
     try {
-      const userLikeRef = doc(db, 'community_messages', post.id, 'likes', currentUser.uid);
+      const userLikeRef = doc(db, 'community_messages', post.id, 'likes', authUid);
       const unsubscribe = onSnapshot(
         userLikeRef,
         (snap) => {
@@ -99,11 +101,12 @@ export function CommunityPostCard({
     } catch {
       // Ignore
     }
-  }, [post.id, currentUser]);
+  }, [post.id, currentUser?.uid]);
 
   // 2. Handle Like Toggle
   const handleToggleLike = async () => {
-    if (!currentUser) {
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+    if (!currentUser || !authUid) {
       openAuthModal();
       return;
     }
@@ -128,13 +131,17 @@ export function CommunityPostCard({
 
     try {
       const postRef = doc(db, 'community_messages', post.id);
-      const likeRef = doc(db, 'community_messages', post.id, 'likes', currentUser.uid);
+      const likeRef = doc(db, 'community_messages', post.id, 'likes', authUid);
 
       await runTransaction(db, async (tx) => {
         const likeSnap = await tx.get(likeRef);
         const postSnap = await tx.get(postRef);
 
-        const currentLikes = postSnap.exists() ? (postSnap.data().likeCount || 0) : prevCount;
+        if (!postSnap.exists()) {
+          throw new Error('Transmission does not exist.');
+        }
+
+        const currentLikes = Number(postSnap.data().likeCount ?? 0);
 
         if (likeSnap.exists()) {
           // Unlike
@@ -145,7 +152,7 @@ export function CommunityPostCard({
         } else {
           // Like
           tx.set(likeRef, {
-            uid: currentUser.uid,
+            uid: authUid,
             createdAt: Date.now(),
           });
           tx.update(postRef, {

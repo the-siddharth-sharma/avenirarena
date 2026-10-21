@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Sparkles, ChevronRight, Loader2, MessageCircleQuestion } from 'lucide-react';
-import { db } from '@/firebase';
+import { Sparkles, ChevronRight, Loader2, MessageCircleQuestion, AlertCircle } from 'lucide-react';
+import { db, auth } from '@/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
 import {
@@ -32,42 +32,66 @@ function getNextRandomIndex(current: number, total: number): number {
   return next;
 }
 
+interface QuoteCacheRecord {
+  counts: Record<string, number>;
+  myReaction: FunReactionEmoji | null;
+}
+
 export function ArenaFunLounge() {
   const { currentUser, openAuthModal } = useAuth();
 
   // 1. Rotation State
-  const [currentIndex, setCurrentIndex] = useState(() => Math.floor(Math.random() * FUN_LOUNGE_ITEMS.length));
+  const [currentIndex, setCurrentIndex] = useState(() =>
+    Math.floor(Math.random() * FUN_LOUNGE_ITEMS.length)
+  );
   const [isFading, setIsFading] = useState(false);
+  const [countdown, setCountdown] = useState(10);
 
   // 2. Persistent Reaction State for the active quote
   const currentItem = FUN_LOUNGE_ITEMS[currentIndex];
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [myReaction, setMyReaction] = useState<FunReactionEmoji | null>(null);
-  const [isLoadingReactions, setIsLoadingReactions] = useState(true);
+  const [isLoadingReactions, setIsLoadingReactions] = useState(false);
   const [isSubmittingReaction, setIsSubmittingReaction] = useState(false);
+  const [reactionError, setReactionError] = useState<string | null>(null);
+
+  // In-memory cache ensures rotating back to a quote immediately restores reactions
+  const reactionsCacheRef = useRef<Record<string, QuoteCacheRecord>>({});
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 3. Five-Second Rotation Engine
+  // 3. Rotation Engine with subtle transition
   const advanceToNext = useCallback(() => {
     setIsFading(true);
     setTimeout(() => {
       setCurrentIndex((prev) => getNextRandomIndex(prev, FUN_LOUNGE_ITEMS.length));
       setIsFading(false);
-    }, 180);
+      setCountdown(10);
+    }, 150);
   }, []);
 
+  // 4. Visible 10-Second Countdown Engine
+  // Counts down 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 -> Next quote
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
+    setCountdown(10);
+
     timerRef.current = setInterval(() => {
-      // Pause rotation if document is hidden (tab switched)
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        advanceToNext();
+      // Pause countdown if browser tab is hidden or backgrounded
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
       }
-    }, 5000);
+
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          advanceToNext();
+          return 10;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   }, [advanceToNext]);
 
-  // Set up rotation timer and visibility change listener
   useEffect(() => {
     resetTimer();
 
@@ -92,45 +116,64 @@ export function ArenaFunLounge() {
     resetTimer();
   };
 
-  // 4. Real-time Firestore Subscription for Active Quote Reactions
-  // Binds strictly to currentItem.id, never carrying over stale counts
+  // 5. Persistent Real-time Reactions Subscription for Current Quote
   useEffect(() => {
-    setIsLoadingReactions(true);
-    setCounts({});
-    setMyReaction(null);
+    const quoteId = currentItem.id;
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+
+    // Check in-memory cache for immediate zero-latency display across rotations
+    const cached = reactionsCacheRef.current[quoteId];
+    if (cached) {
+      setCounts(cached.counts);
+      setMyReaction(cached.myReaction);
+      setIsLoadingReactions(false);
+    } else {
+      setCounts({});
+      setMyReaction(null);
+      setIsLoadingReactions(true);
+    }
+    setReactionError(null);
 
     let isMounted = true;
-    const quoteDocRef = doc(db, 'quote_reactions', currentItem.id);
+    const quoteDocRef = doc(db, 'quote_reactions', quoteId);
 
     const unsubQuote = onSnapshot(
       quoteDocRef,
       (snap) => {
         if (!isMounted) return;
-        if (snap.exists()) {
-          const remoteCounts = (snap.data().counts as Record<string, number>) || {};
-          setCounts(remoteCounts);
-        } else {
-          setCounts({});
-        }
+        const remoteCounts = snap.exists()
+          ? (snap.data().counts as Record<string, number>) || {}
+          : {};
+
+        setCounts(remoteCounts);
         setIsLoadingReactions(false);
+
+        // Update in-memory cache
+        reactionsCacheRef.current[quoteId] = {
+          counts: remoteCounts,
+          myReaction: reactionsCacheRef.current[quoteId]?.myReaction ?? null,
+        };
       },
       (err) => {
-        console.warn('[ARENA FUN LOUNGE] Reaction counts fallback:', err);
+        console.warn('[ARENA FUN LOUNGE] Reaction counts listener fallback:', err);
         if (isMounted) setIsLoadingReactions(false);
       }
     );
 
     let unsubUser: (() => void) | undefined;
-    if (currentUser) {
-      const userReactionRef = doc(db, 'quote_reactions', currentItem.id, 'reactions', currentUser.uid);
+    if (authUid) {
+      const userReactionRef = doc(db, 'quote_reactions', quoteId, 'reactions', authUid);
       unsubUser = onSnapshot(
         userReactionRef,
         (snap) => {
           if (!isMounted) return;
-          if (snap.exists()) {
-            setMyReaction((snap.data().reaction as FunReactionEmoji) || null);
-          } else {
-            setMyReaction(null);
+          const userEmoji = snap.exists()
+            ? (snap.data().reaction as FunReactionEmoji) || null
+            : null;
+          setMyReaction(userEmoji);
+
+          if (reactionsCacheRef.current[quoteId]) {
+            reactionsCacheRef.current[quoteId].myReaction = userEmoji;
           }
         },
         () => {}
@@ -142,17 +185,19 @@ export function ArenaFunLounge() {
       unsubQuote();
       if (unsubUser) unsubUser();
     };
-  }, [currentItem.id, currentUser]);
+  }, [currentItem.id, currentUser?.uid]);
 
-  // 5. Concurrency-Safe Reaction Handler
+  // 6. Concurrency-Safe Persistent Reaction Handler
   const handleToggleReaction = async (emoji: FunReactionEmoji) => {
-    if (!currentUser) {
+    const authUid = auth.currentUser?.uid || currentUser?.uid;
+    if (!currentUser || !authUid) {
       openAuthModal();
       return;
     }
 
     if (isSubmittingReaction) return;
     setIsSubmittingReaction(true);
+    setReactionError(null);
 
     const prevReaction = myReaction;
     const isRemoving = prevReaction === emoji;
@@ -160,55 +205,70 @@ export function ArenaFunLounge() {
 
     // Optimistic UI update
     setMyReaction(nextReaction);
-    setCounts((prev) => {
-      const copy = { ...prev };
-      if (prevReaction) {
-        copy[prevReaction] = Math.max(0, (copy[prevReaction] || 1) - 1);
-        if (copy[prevReaction] === 0) delete copy[prevReaction];
-      }
-      if (nextReaction) {
-        copy[nextReaction] = (copy[nextReaction] || 0) + 1;
-      }
-      return copy;
-    });
+    const updatedLocalCounts = { ...counts };
+    if (prevReaction && updatedLocalCounts[prevReaction]) {
+      updatedLocalCounts[prevReaction] = Math.max(0, updatedLocalCounts[prevReaction] - 1);
+      if (updatedLocalCounts[prevReaction] === 0) delete updatedLocalCounts[prevReaction];
+    }
+    if (nextReaction) {
+      updatedLocalCounts[nextReaction] = (updatedLocalCounts[nextReaction] || 0) + 1;
+    }
+    setCounts(updatedLocalCounts);
+
+    // Save to cache immediately
+    reactionsCacheRef.current[currentItem.id] = {
+      counts: updatedLocalCounts,
+      myReaction: nextReaction,
+    };
 
     try {
       const quoteDocRef = doc(db, 'quote_reactions', currentItem.id);
-      const userReactionRef = doc(db, 'quote_reactions', currentItem.id, 'reactions', currentUser.uid);
+      const userReactionRef = doc(
+        db,
+        'quote_reactions',
+        currentItem.id,
+        'reactions',
+        authUid
+      );
 
       await runTransaction(db, async (tx) => {
         const quoteSnap = await tx.get(quoteDocRef);
         const userSnap = await tx.get(userReactionRef);
 
-        const currentCounts = (quoteSnap.exists() ? (quoteSnap.data().counts as Record<string, number>) : {}) || {};
-        const updatedCounts: Record<string, number> = { ...currentCounts };
+        const serverCounts =
+          (quoteSnap.exists()
+            ? (quoteSnap.data().counts as Record<string, number>)
+            : {}) || {};
+        const freshCounts: Record<string, number> = { ...serverCounts };
 
-        const existingReaction = userSnap.exists() ? (userSnap.data().reaction as string) : null;
+        const existingReaction = userSnap.exists()
+          ? (userSnap.data().reaction as string)
+          : null;
 
         if (isRemoving) {
           tx.delete(userReactionRef);
-          if (existingReaction && updatedCounts[existingReaction]) {
-            updatedCounts[existingReaction] = Math.max(0, updatedCounts[existingReaction] - 1);
-            if (updatedCounts[existingReaction] === 0) delete updatedCounts[existingReaction];
+          if (existingReaction && freshCounts[existingReaction]) {
+            freshCounts[existingReaction] = Math.max(0, freshCounts[existingReaction] - 1);
+            if (freshCounts[existingReaction] === 0) delete freshCounts[existingReaction];
           }
         } else {
           tx.set(userReactionRef, {
-            uid: currentUser.uid,
+            uid: authUid,
             reaction: emoji,
             updatedAt: Date.now(),
           });
-          if (existingReaction && updatedCounts[existingReaction]) {
-            updatedCounts[existingReaction] = Math.max(0, updatedCounts[existingReaction] - 1);
-            if (updatedCounts[existingReaction] === 0) delete updatedCounts[existingReaction];
+          if (existingReaction && freshCounts[existingReaction]) {
+            freshCounts[existingReaction] = Math.max(0, freshCounts[existingReaction] - 1);
+            if (freshCounts[existingReaction] === 0) delete freshCounts[existingReaction];
           }
-          updatedCounts[emoji] = (updatedCounts[emoji] || 0) + 1;
+          freshCounts[emoji] = (freshCounts[emoji] || 0) + 1;
         }
 
         tx.set(
           quoteDocRef,
           {
             quoteId: currentItem.id,
-            counts: updatedCounts,
+            counts: freshCounts,
             lastUpdated: Date.now(),
           },
           { merge: true }
@@ -218,17 +278,14 @@ export function ArenaFunLounge() {
       console.warn('[ARENA FUN LOUNGE] Reaction write failed, reverting:', err);
       // Rollback optimistic state
       setMyReaction(prevReaction);
-      setCounts((prev) => {
-        const copy = { ...prev };
-        if (nextReaction) {
-          copy[nextReaction] = Math.max(0, (copy[nextReaction] || 1) - 1);
-          if (copy[nextReaction] === 0) delete copy[nextReaction];
-        }
-        if (prevReaction) {
-          copy[prevReaction] = (copy[prevReaction] || 0) + 1;
-        }
-        return copy;
-      });
+      setCounts(counts);
+      if (reactionsCacheRef.current[currentItem.id]) {
+        reactionsCacheRef.current[currentItem.id] = {
+          counts,
+          myReaction: prevReaction,
+        };
+      }
+      setReactionError('Failed to save reaction. Tap to retry.');
     } finally {
       setIsSubmittingReaction(false);
     }
@@ -237,52 +294,59 @@ export function ArenaFunLounge() {
   const categoryStyle = CATEGORY_COLORS[currentItem.category] || CATEGORY_COLORS.CODING;
 
   return (
-    <footer className="mt-14 pt-6 border-t border-line/40 select-none">
-      <div className="p-4 sm:p-5 rounded-2xl border border-line/70 bg-graphite/50 backdrop-blur-md shadow-lg transition-all hover:border-gold-400/35 space-y-3.5 text-left">
-        {/* Header Bar */}
-        <div className="flex items-center justify-between gap-3 border-b border-line/40 pb-2.5">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400 shrink-0">
-              <Sparkles className="w-3.5 h-3.5" />
+    <footer className="mt-8 pt-4 border-t border-line/40 select-none">
+      <div className="p-3 sm:p-4 rounded-xl border border-line/60 bg-graphite/40 backdrop-blur-sm transition-all hover:border-gold-400/30 space-y-2.5 text-left">
+        {/* Subtle Compact Header Bar */}
+        <div className="flex items-center justify-between gap-2 border-b border-line/30 pb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-5 h-5 rounded-md bg-gold-400/10 border border-gold-400/25 flex items-center justify-center text-gold-400 shrink-0">
+              <Sparkles className="w-3 h-3" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-display font-bold text-xs tracking-wider uppercase text-ivory">
-                  ARENA FUN LOUNGE
-                </span>
-                <span
-                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase font-bold ${categoryStyle.bg} ${categoryStyle.text} ${categoryStyle.border}`}
-                >
-                  {currentItem.category}
-                </span>
-              </div>
-              <p className="text-[10px] font-mono text-muted/80">
-                Thoda code, thoda chaos, full engineering vibes.
-              </p>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-display font-bold text-[11px] tracking-wider uppercase text-ivory shrink-0">
+                ARENA FUN LOUNGE
+              </span>
+              <span
+                className={`text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase font-bold shrink-0 ${categoryStyle.bg} ${categoryStyle.text} ${categoryStyle.border}`}
+              >
+                {currentItem.category}
+              </span>
             </div>
           </div>
 
-          {/* Manual Next Button */}
-          <button
-            type="button"
-            onClick={handleManualNext}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-mono text-gold-400 hover:text-gold-300 bg-gold-400/5 hover:bg-gold-400/10 border border-gold-400/30 transition-all shrink-0 active:scale-95"
-            title="Next joke (resets 5s timer)"
-          >
-            <span>Next joke</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          {/* Numerical Countdown & Manual Next Action */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Visual Numerical Countdown Cue */}
+            <div
+              className="flex items-center gap-1 text-[11px] font-mono text-muted/80 bg-obsidian/60 px-2 py-0.5 rounded-md border border-line/50"
+              title="Next quote countdown"
+            >
+              <span className="text-[10px] text-muted/60">Next in:</span>
+              <span className="text-gold-400 font-bold w-4 text-center">{countdown}s</span>
+            </div>
+
+            {/* Manual Next Button */}
+            <button
+              type="button"
+              onClick={handleManualNext}
+              className="flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] font-mono text-gold-400 hover:text-gold-300 bg-gold-400/5 hover:bg-gold-400/10 border border-gold-400/30 transition-all active:scale-95"
+              title="Next quote"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
         </div>
 
-        {/* Dynamic Rotating Content with Fade Transition */}
+        {/* Dynamic Rotating Quote / Question Content */}
         <div
-          className={`min-h-[44px] flex items-center transition-opacity duration-200 ${
-            isFading ? 'opacity-0 translate-y-1' : 'opacity-100 translate-y-0'
+          className={`min-h-[38px] flex items-center transition-opacity duration-150 motion-reduce:transition-none ${
+            isFading ? 'opacity-0' : 'opacity-100'
           }`}
         >
           {currentItem.isQuestion ? (
             <div className="flex items-start gap-2 text-ivory">
-              <MessageCircleQuestion className="w-4 h-4 text-gold-400 shrink-0 mt-0.5" />
+              <MessageCircleQuestion className="w-3.5 h-3.5 text-gold-400 shrink-0 mt-0.5" />
               <p className="text-xs sm:text-sm font-sans font-medium text-ivory/95 leading-relaxed">
                 {currentItem.text}
               </p>
@@ -294,9 +358,9 @@ export function ArenaFunLounge() {
           )}
         </div>
 
-        {/* Global Persistent Reactions Bar */}
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-line/30 flex-wrap">
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        {/* Reaction Bar & Feedback */}
+        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-line/25 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {FUN_LOUNGE_REACTIONS.map((emoji) => {
               const count = counts[emoji] || 0;
               const isSelected = myReaction === emoji;
@@ -307,47 +371,55 @@ export function ArenaFunLounge() {
                   type="button"
                   onClick={() => handleToggleReaction(emoji)}
                   disabled={isSubmittingReaction}
-                  className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-150 border ${
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono transition-all duration-150 border ${
                     isSelected
-                      ? 'border-gold-400 bg-gold-400/20 text-gold-400 font-bold shadow-[0_0_12px_rgba(208,180,119,0.35)] scale-105'
+                      ? 'border-gold-400 bg-gold-400/20 text-gold-400 font-bold shadow-[0_0_8px_rgba(208,180,119,0.3)] scale-105'
                       : count > 0
-                      ? 'border-line bg-obsidian text-ivory/90 hover:border-gold-400/50'
-                      : 'border-line/60 bg-obsidian/60 text-muted/70 hover:text-ivory hover:border-line'
+                      ? 'border-line bg-obsidian text-ivory hover:border-gold-400/50'
+                      : 'border-line/50 bg-obsidian/50 text-muted/70 hover:text-ivory hover:border-line'
                   }`}
-                  title={isSelected ? `You reacted ${emoji}. Click to remove.` : `React with ${emoji}`}
+                  title={
+                    isSelected
+                      ? `You reacted ${emoji}. Click to remove.`
+                      : `React with ${emoji}`
+                  }
                 >
-                  <span className="text-sm">{emoji}</span>
-                  {isLoadingReactions ? (
-                    <span className="text-[10px] text-muted/40">·</span>
-                  ) : count > 0 ? (
-                    <span className={`text-[11px] ${isSelected ? 'text-gold-400 font-bold' : 'text-muted'}`}>
+                  <span className="text-xs">{emoji}</span>
+                  {count > 0 && (
+                    <span
+                      className={`text-[10px] ${
+                        isSelected ? 'text-gold-400 font-bold' : 'text-muted'
+                      }`}
+                    >
                       {count}
                     </span>
-                  ) : null}
+                  )}
                 </button>
               );
             })}
           </div>
 
-          {/* Subtitle / Rotation indicator */}
+          {/* Sync indicator & Error state */}
           <div className="flex items-center gap-2 text-[10px] font-mono text-muted/60 ml-auto">
             {isLoadingReactions && (
-              <span className="flex items-center gap-1 text-gold-400/80">
+              <span className="flex items-center gap-1 text-gold-400/70">
                 <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                <span>Syncing vibes...</span>
+                <span>Syncing...</span>
               </span>
             )}
-            <span className="hidden sm:inline">#{currentItem.id}</span>
-            <span>·</span>
-            <span className="text-gold-400/70">Rotates every 5s</span>
+            {reactionError && (
+              <button
+                type="button"
+                onClick={() => handleToggleReaction(myReaction || '👍')}
+                className="flex items-center gap-1 text-red-400 hover:text-red-300 underline"
+              >
+                <AlertCircle className="w-2.5 h-2.5" />
+                <span>{reactionError}</span>
+              </button>
+            )}
+            <span className="text-muted/40">#{currentItem.id}</span>
           </div>
         </div>
-      </div>
-
-      {/* Subtle brand attribution */}
-      <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-muted/50 px-1">
-        <span>AVENIR ARENA v2.4 · Engineering Fun Lounge</span>
-        <span>Mirai School of Technology</span>
       </div>
     </footer>
   );

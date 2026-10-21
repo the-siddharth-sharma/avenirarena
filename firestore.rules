@@ -64,9 +64,9 @@ service cloud.firestore {
       // ── POST LIKES (Deterministic 1 like per student per post) ──
       match /likes/{userId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated()
-                      && isOwner(userId)
-                      && request.resource.data.uid == userId;
+        allow create, update: if isAuthenticated()
+                              && isOwner(userId)
+                              && request.resource.data.uid == userId;
         allow delete: if isAuthenticated() && isOwner(userId);
       }
 
